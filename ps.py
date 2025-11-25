@@ -9,11 +9,11 @@ screen = pygame.display.set_mode((WIDTH, HEIGHT))
 pygame.display.set_caption("Plane Shooter")
 
 # Colors
-WHITE = (255, 255, 255)
-RED = (255, 0, 0)
-GREEN = (0, 255, 0)
-BLUE = (0, 0, 255)
 BLACK = (0, 0, 0)
+BLUE = (0, 120, 255)
+RED = (255, 50, 50)
+GREEN = (0, 255, 0)
+WHITE = (255, 255, 255)
 
 # Player
 class Player:
@@ -25,13 +25,17 @@ class Player:
         self.speed = 5
         self.health = 3
         self.bullets = []
-    
+        self.shoot_cooldown = 0
+        self.shoot_delay = 30  # frames between shots (lower = faster)
+        
     def draw(self):
-        pygame.draw.rect(screen, BLUE, (self.x, self.y, self.width, self.height))
-        # Draw health
-        for i in range(self.health):
-            pygame.draw.rect(screen, GREEN, (10 + i * 30, 10, 20, 20))
-    
+        # Corrected to make triangle face RIGHT →
+        pygame.draw.polygon(screen, BLUE, [
+            (self.x + self.width, self.y + self.height//2),  # Nose point (rightmost)
+            (self.x, self.y),                                # Top-left
+            (self.x, self.y + self.height)                   # Bottom-left
+        ])
+        
     def move(self, keys):
         if keys[pygame.K_w] and self.y > 0:
             self.y -= self.speed
@@ -41,17 +45,13 @@ class Player:
             self.x -= self.speed
         if keys[pygame.K_d] and self.x < WIDTH // 2:  # Restrict to left half
             self.x += self.speed
-    
-    def shoot(self):
-        self.bullets.append([self.x + self.width, self.y + self.height // 2])
-    
-    def update_bullets(self):
-        for bullet in self.bullets[:]:
-            bullet[0] += 10  # Move right
-            if bullet[0] > WIDTH:
-                self.bullets.remove(bullet)
-            else:
-                pygame.draw.rect(screen, GREEN, (bullet[0], bullet[1], 10, 5))
+            
+    def shoot(self, keys):
+        if keys[pygame.K_SPACE] and self.shoot_cooldown <= 0:
+            self.bullets.append([self.x + self.width, self.y + self.height//2 - 2])
+            self.shoot_cooldown = self.shoot_delay
+        elif self.shoot_cooldown > 0:
+            self.shoot_cooldown -= 1
 
 # Enemy
 class Enemy:
@@ -61,37 +61,32 @@ class Enemy:
         self.width = 50
         self.height = 30
         self.speed = 3
-        self.bullets = []
-        self.shoot_delay = 0
-    
+        self.health = 1
+        self.shoot_cooldown = random.randint(30, 90)
+        
     def draw(self):
-        pygame.draw.rect(screen, RED, (self.x, self.y, self.width, self.height))
-    
-    def move(self):
+        # Draw enemy (triangle facing LEFT)
+        pygame.draw.polygon(screen, RED, [
+            (self.x, self.y + self.height//2),  # Nose point
+            (self.x + self.width, self.y),      # Top-right
+            (self.x + self.width, self.y + self.height)  # Bottom-right
+        ])
+        
+    def update(self):
         self.x -= self.speed
-        # Stop at 70% of screen
-        if self.x < WIDTH * 0.7:
-            self.x = WIDTH * 0.7
-            # Shoot occasionally
-            self.shoot_delay += 1
-            if self.shoot_delay > 60:  # Every ~1 second at 60 FPS
-                self.shoot()
-                self.shoot_delay = 0
-    
+        self.shoot_cooldown -= 1
+        
+    def should_shoot(self):
+        return self.shoot_cooldown <= 0
+        
     def shoot(self):
-        self.bullets.append([self.x, self.y + self.height // 2])
-    
-    def update_bullets(self):
-        for bullet in self.bullets[:]:
-            bullet[0] -= 7  # Move left
-            if bullet[0] < 0:
-                self.bullets.remove(bullet)
-            else:
-                pygame.draw.rect(screen, RED, (bullet[0], bullet[1], 10, 5))
+        self.shoot_cooldown = random.randint(30, 90)
+        return [self.x, self.y + self.height // 2]  # Returns bullet position
 
-# Game Setup
+# Game setup
 player = Player()
 enemies = []
+enemy_bullets = []
 enemy_spawn_timer = 0
 score = 0
 clock = pygame.time.Clock()
@@ -108,17 +103,6 @@ def check_collisions():
                 enemies.remove(enemy)
                 score += 10
                 break
-    
-    # Enemy bullets hit player
-    for enemy in enemies:
-        for bullet in enemy.bullets[:]:
-            if (player.x < bullet[0] < player.x + player.width and
-                player.y < bullet[1] < player.y + player.height):
-                enemy.bullets.remove(bullet)
-                player.health -= 1
-                if player.health <= 0:
-                    game_over()
-                break
 
 def game_over():
     text = font.render(f"GAME OVER - Score: {score}", True, WHITE)
@@ -128,42 +112,79 @@ def game_over():
     pygame.quit()
     sys.exit()
 
-# Main Game Loop
+# Main game loop
 running = True
 while running:
     screen.fill(BLACK)
     
-    # Event Handling
+    # Event handling
     for event in pygame.event.get():
         if event.type == pygame.QUIT:
             running = False
-        if event.type == pygame.KEYDOWN:
-            if event.key == pygame.K_SPACE:
-                player.shoot()
     
-    # Spawn Enemies
+    # Player controls
+    keys = pygame.key.get_pressed()
+    player.move(keys)
+    player.shoot(keys)  # Automatic shooting when space is held
+    
+    # Spawn enemies
     enemy_spawn_timer += 1
     if enemy_spawn_timer > 120:  # Every ~2 seconds at 60 FPS
         enemies.append(Enemy())
         enemy_spawn_timer = 0
     
-    # Update
-    player.move(pygame.key.get_pressed())
-    player.update_bullets()
+    # Update player bullets
+    for bullet in player.bullets[:]:
+        bullet[0] += 10  # Move right
+        if bullet[0] > WIDTH:
+            player.bullets.remove(bullet)
+    
+    # Update enemies
     for enemy in enemies[:]:
-        enemy.move()
-        enemy.update_bullets()
+        enemy.update()
+        
+        # Remove enemies that go off-screen
+        if enemy.x < -enemy.width:
+            enemies.remove(enemy)
+            continue
+            
+        # Enemy shooting
+        if enemy.should_shoot():
+            enemy_bullets.append(enemy.shoot())
+    
+    # Update enemy bullets
+    for bullet in enemy_bullets[:]:
+        bullet[0] -= 7  # Move left
+        if bullet[0] < 0:
+            enemy_bullets.remove(bullet)
+            
+        # Check collision with player
+        if (player.x < bullet[0] < player.x + player.width and
+            player.y < bullet[1] < player.y + player.height):
+            enemy_bullets.remove(bullet)
+            player.health -= 1
+            if player.health <= 0:
+                game_over()
     
     check_collisions()
     
-    # Draw
-    player.draw()
+    # Draw everything
+    for bullet in player.bullets:
+        pygame.draw.rect(screen, GREEN, (bullet[0], bullet[1], 10, 5))
+    
+    for bullet in enemy_bullets:
+        pygame.draw.rect(screen, RED, (bullet[0], bullet[1], 10, 5))
+    
     for enemy in enemies:
         enemy.draw()
     
-    # Draw score
+    player.draw()
+    
+    # Draw UI
+    health_text = font.render(f"Health: {player.health}", True, WHITE)
     score_text = font.render(f"Score: {score}", True, WHITE)
-    screen.blit(score_text, (WIDTH - 150, 20))
+    screen.blit(health_text, (10, 10))
+    screen.blit(score_text, (10, 50))
     
     pygame.display.flip()
     clock.tick(60)
