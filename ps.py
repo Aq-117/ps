@@ -1,3 +1,4 @@
+#basic code with single enemy, no background, no sound.
 import pygame
 import random
 import sys
@@ -36,9 +37,13 @@ def load_image(name, scale=1):
 
 # Load all assets
 player_img = load_image("player.png", 0.7)
-enemy_img = load_image("enemy-1.jpg", 0.7)
+enemy_img = load_image("enemy.jpg", 0.7)
 bullet_img = load_image("bullet.png", 0.5)
 
+# After loading images, force specific sizes:
+player_img = pygame.transform.scale(player_img, (40, 24))      # Width, Height
+enemy_img = pygame.transform.scale(enemy_img, (40, 24))
+bullet_img = pygame.transform.scale(bullet_img, (8, 4))
 # Player Class
 class Player:
     def __init__(self):
@@ -49,7 +54,7 @@ class Player:
         self.health = 3
         self.bullets = []
         self.shoot_cooldown = 0
-        self.shoot_delay = 15
+        self.shoot_delay = 30
         
     def draw(self):
         screen.blit(self.img, (self.x, self.y))
