@@ -1,4 +1,4 @@
-#player has health bar
+#enemies have health bars
 import pygame
 import random
 import sys
@@ -174,7 +174,7 @@ class Player:
         if self.shoot_cooldown <= 0:
             self.bullets.append(Bullet(self.x + self.rect.width, 
                                     self.y + self.rect.height//2, 
-                                    True))
+                                    True, damage=1))
             self.shoot_cooldown = self.shoot_delay
             if has_sound:
                 shoot_sound.play()
@@ -426,11 +426,12 @@ class Player:
 
 # Bullet Class
 class Bullet:
-    def __init__(self, x, y, is_player):
+    def __init__(self, x, y, is_player, damage=1):
         self.x = x
         self.y = y
         self.img = bullet_img
         self.is_player = is_player
+        self.damage = damage
         self.rect = pygame.Rect(x, y, 8, 4)  # Fixed size for fallback
         
         # Default straight movement
@@ -466,8 +467,30 @@ class Enemy1:
         self.rect = pygame.Rect(self.x, self.y, 40, 24)
         self.type = 1  # Add enemy type identifier
         self.death_particles = []
+        self.max_health = 1
+        self.health = self.max_health
         self.dead = False  # <-- Add this line
         
+    def draw_health_bar(self, surface):
+        if self.health < self.max_health:  # Only show if damaged
+            bar_width = 40
+            bar_height = 4
+            outline_rect = pygame.Rect(self.x, self.y - 8, bar_width, bar_height)
+            fill_rect = pygame.Rect(self.x, self.y - 8, bar_width * (self.health/self.max_health), bar_height)
+            
+            # Color based on health percentage
+            health_pct = self.health / self.max_health
+            if health_pct > 0.6:
+                color = (0, 255, 0)  # Green
+            elif health_pct > 0.3:
+                color = (255, 255, 0)  # Yellow
+            else:
+                color = (255, 0, 0)  # Red
+                
+            pygame.draw.rect(surface, (40, 40, 40), outline_rect)  # Background
+            pygame.draw.rect(surface, color, fill_rect)  # Health
+            pygame.draw.rect(surface, (100, 100, 100), outline_rect, 1)  # Border
+
     def draw(self):
         if self.img:
             screen.blit(self.img, (self.x, self.y))
@@ -476,6 +499,19 @@ class Enemy1:
                                [(self.x, self.y+15), 
                                 (self.x+40, self.y), 
                                 (self.x+40, self.y+30)])
+        self.draw_health_bar(screen)
+        if self.health < self.max_health:
+            damage_pct = 1 - (self.health / self.max_health)
+            if damage_pct > 0.5:  # More than 50% damaged
+                # Add smoke effect
+                for _ in range(int(2 * damage_pct)):
+                    smoke_pos = (
+                        self.x + random.randint(0, self.rect.width),
+                        self.y + random.randint(0, self.rect.height)
+                    )
+                    pygame.draw.circle(screen, 
+                                    (random.randint(80, 120), random.randint(80, 120), random.randint(80, 120)),
+                                    smoke_pos, random.randint(1, 3))
         
     def update(self):
         self.x -= self.speed
@@ -535,8 +571,30 @@ class Enemy2:
         self.type = 2
         self.has_stopped = False
         self.death_particles = []
+        self.max_health = 3
+        self.health = self.max_health
         self.dead = False  # <-- Add this line
         
+    def draw_health_bar(self, surface):
+        if self.health < self.max_health:  # Only show if damaged
+            bar_width = 40
+            bar_height = 4
+            outline_rect = pygame.Rect(self.x, self.y - 8, bar_width, bar_height)
+            fill_rect = pygame.Rect(self.x, self.y - 8, bar_width * (self.health/self.max_health), bar_height)
+            
+            # Color based on health percentage
+            health_pct = self.health / self.max_health
+            if health_pct > 0.6:
+                color = (0, 255, 0)  # Green
+            elif health_pct > 0.3:
+                color = (255, 255, 0)  # Yellow
+            else:
+                color = (255, 0, 0)  # Red
+                
+            pygame.draw.rect(surface, (40, 40, 40), outline_rect)  # Background
+            pygame.draw.rect(surface, color, fill_rect)  # Health
+            pygame.draw.rect(surface, (100, 100, 100), outline_rect, 1)  # Border
+
     def draw(self):
         if self.img:
             screen.blit(self.img, (self.x, self.y))
@@ -545,6 +603,19 @@ class Enemy2:
                                [(self.x, self.y+15), 
                                 (self.x+40, self.y), 
                                 (self.x+40, self.y+30)])
+        self.draw_health_bar(screen)
+        if self.health < self.max_health:
+            damage_pct = 1 - (self.health / self.max_health)
+            if damage_pct > 0.5:  # More than 50% damaged
+                # Add smoke effect
+                for _ in range(int(2 * damage_pct)):
+                    smoke_pos = (
+                        self.x + random.randint(0, self.rect.width),
+                        self.y + random.randint(0, self.rect.height)
+                    )
+                    pygame.draw.circle(screen, 
+                                    (random.randint(80, 120), random.randint(80, 120), random.randint(80, 120)),
+                                    smoke_pos, random.randint(1, 3))
         
     def update(self):
         if not self.has_stopped:
@@ -610,8 +681,30 @@ class Enemy3:
         self.type = 3
         self.has_stopped = False
         self.death_particles = []
+        self.max_health = 2
+        self.health = self.max_health
         self.dead = False  # <-- Add this line
         
+    def draw_health_bar(self, surface):
+        if self.health < self.max_health:  # Only show if damaged
+            bar_width = 40
+            bar_height = 4
+            outline_rect = pygame.Rect(self.x, self.y - 8, bar_width, bar_height)
+            fill_rect = pygame.Rect(self.x, self.y - 8, bar_width * (self.health/self.max_health), bar_height)
+            
+            # Color based on health percentage
+            health_pct = self.health / self.max_health
+            if health_pct > 0.6:
+                color = (0, 255, 0)  # Green
+            elif health_pct > 0.3:
+                color = (255, 255, 0)  # Yellow
+            else:
+                color = (255, 0, 0)  # Red
+                
+            pygame.draw.rect(surface, (40, 40, 40), outline_rect)  # Background
+            pygame.draw.rect(surface, color, fill_rect)  # Health
+            pygame.draw.rect(surface, (100, 100, 100), outline_rect, 1)  # Border
+
     def draw(self):
         if self.img:
             screen.blit(self.img, (self.x, self.y))
@@ -620,6 +713,19 @@ class Enemy3:
                                [(self.x, self.y+15), 
                                 (self.x+40, self.y), 
                                 (self.x+40, self.y+30)])
+        self.draw_health_bar(screen)
+        if self.health < self.max_health:
+            damage_pct = 1 - (self.health / self.max_health)
+            if damage_pct > 0.5:  # More than 50% damaged
+                # Add smoke effect
+                for _ in range(int(2 * damage_pct)):
+                    smoke_pos = (
+                        self.x + random.randint(0, self.rect.width),
+                        self.y + random.randint(0, self.rect.height)
+                    )
+                    pygame.draw.circle(screen, 
+                                    (random.randint(80, 120), random.randint(80, 120), random.randint(80, 120)),
+                                    smoke_pos, random.randint(1, 3))
         
     def update(self):
         if not self.has_stopped:
@@ -745,9 +851,30 @@ class Enemy4:
         self.rect = pygame.Rect(self.x, self.y, 50, 30)
         self.type = 4
         self.death_particles = []
+        self.max_health = 2
+        self.health = self.max_health
         self.dead = False  # <-- Add this line
         
-        
+    def draw_health_bar(self, surface):
+        if self.health < self.max_health:  # Only show if damaged
+            bar_width = 40
+            bar_height = 4
+            outline_rect = pygame.Rect(self.x, self.y - 8, bar_width, bar_height)
+            fill_rect = pygame.Rect(self.x, self.y - 8, bar_width * (self.health/self.max_health), bar_height)
+            
+            # Color based on health percentage
+            health_pct = self.health / self.max_health
+            if health_pct > 0.6:
+                color = (0, 255, 0)  # Green
+            elif health_pct > 0.3:
+                color = (255, 255, 0)  # Yellow
+            else:
+                color = (255, 0, 0)  # Red
+                
+            pygame.draw.rect(surface, (40, 40, 40), outline_rect)  # Background
+            pygame.draw.rect(surface, color, fill_rect)  # Health
+            pygame.draw.rect(surface, (100, 100, 100), outline_rect, 1)  # Border    
+
     def draw(self):
         if self.img:
             screen.blit(self.img, (self.x, self.y))
@@ -756,7 +883,20 @@ class Enemy4:
                                [(self.x, self.y+15), 
                                 (self.x+40, self.y), 
                                 (self.x+40, self.y+30)])
-        
+        self.draw_health_bar(screen)
+        if self.health < self.max_health:
+            damage_pct = 1 - (self.health / self.max_health)
+            if damage_pct > 0.5:  # More than 50% damaged
+                # Add smoke effect
+                for _ in range(int(2 * damage_pct)):
+                    smoke_pos = (
+                        self.x + random.randint(0, self.rect.width),
+                        self.y + random.randint(0, self.rect.height)
+                    )
+                    pygame.draw.circle(screen, 
+                                    (random.randint(80, 120), random.randint(80, 120), random.randint(80, 120)),
+                                    smoke_pos, random.randint(1, 3))
+                
     def update(self):
         if self.x > self.stop_x:
             self.x -= self.speed
@@ -826,7 +966,29 @@ class Enemy5:
         self.type = 5
         self.dead = False
         self.set_new_angle()  # Initialize first angle
+        self.max_health = 1
+        self.health = self.max_health
         self.death_particles = []
+
+    def draw_health_bar(self, surface):
+        if self.health < self.max_health:  # Only show if damaged
+            bar_width = 40
+            bar_height = 4
+            outline_rect = pygame.Rect(self.x, self.y - 8, bar_width, bar_height)
+            fill_rect = pygame.Rect(self.x, self.y - 8, bar_width * (self.health/self.max_health), bar_height)
+            
+            # Color based on health percentage
+            health_pct = self.health / self.max_health
+            if health_pct > 0.6:
+                color = (0, 255, 0)  # Green
+            elif health_pct > 0.3:
+                color = (255, 255, 0)  # Yellow
+            else:
+                color = (255, 0, 0)  # Red
+                
+            pygame.draw.rect(surface, (40, 40, 40), outline_rect)  # Background
+            pygame.draw.rect(surface, color, fill_rect)  # Health
+            pygame.draw.rect(surface, (100, 100, 100), outline_rect, 1)  # Border
 
     def set_new_angle(self):
         # Calculate new angle (limited to prevent too steep angles)
@@ -899,6 +1061,19 @@ class Enemy5:
                             [(self.x, self.y+15), 
                                 (self.x+40, self.y), 
                                 (self.x+40, self.y+30)])
+        self.draw_health_bar(screen)
+        if self.health < self.max_health:
+            damage_pct = 1 - (self.health / self.max_health)
+            if damage_pct > 0.5:  # More than 50% damaged
+                # Add smoke effect
+                for _ in range(int(2 * damage_pct)):
+                    smoke_pos = (
+                        self.x + random.randint(0, self.rect.width),
+                        self.y + random.randint(0, self.rect.height)
+                    )
+                    pygame.draw.circle(screen, 
+                                    (random.randint(80, 120), random.randint(80, 120), random.randint(80, 120)),
+                                    smoke_pos, random.randint(1, 3))
 
     def should_shoot(self):
         return self.shoot_cooldown <= 0
@@ -1017,13 +1192,32 @@ def check_collisions():
     for bullet in player.bullets[:]:
         for enemy in enemies[:]:
             if bullet.rect.colliderect(enemy.rect) and not enemy.dead:
-                enemy.create_death_particles()
-                global_particles.extend(enemy.death_particles)  # Move particles to global list
-                player.bullets.remove(bullet)
-                enemies.remove(enemy)  # Instantly remove enemy
-                score += 10
-                if has_sound:
-                    explosion_sound.play()
+                enemy.health -= bullet.damage  # Reduce health by bullet's damage
+                
+                if enemy.health <= 0:
+                    enemy.create_death_particles()
+                    global_particles.extend(enemy.death_particles)
+                    player.bullets.remove(bullet)
+                    enemies.remove(enemy)
+                    score += 10 * enemy.max_health  # More points for tougher enemies
+                    if has_sound:
+                        explosion_sound.play()
+                else:
+                    # Just damage, not destroyed
+                    player.bullets.remove(bullet)
+                    # Add hit effect
+                    for _ in range(3):
+                        enemy.death_particles.append({
+                            'x': bullet.rect.centerx,
+                            'y': bullet.rect.centery,
+                            'dx': random.uniform(-1, 1),
+                            'dy': random.uniform(-1, 1),
+                            'size': random.randint(1, 2),
+                            'life': random.randint(5, 10),
+                            'color': (255, random.randint(100, 200), 0)
+                        })
+                    if has_sound:
+                        shoot_sound.play()  # Different sound for hit vs kill
                 break
 
     # Enemy collision with player (INSTANT DEATH)
