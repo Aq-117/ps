@@ -1,4 +1,4 @@
-#player movement updated with acceleration, decelaration and gravity
+#player has health bar
 import pygame
 import random
 import sys
@@ -109,20 +109,6 @@ class Player:
                                self.img.get_height() if self.img else 30)
 
     def handle_input(self, keys):
-        # # Horizontal movement with friction
-        # if keys[pygame.K_a]:
-        #     self.vel_x -= self.acceleration
-        # elif keys[pygame.K_d]:
-        #     self.vel_x += self.acceleration
-        # else:
-        #     # Apply friction when no key is pressed
-        #     if abs(self.vel_x) < self.friction:
-        #         self.vel_x = 0
-        #     elif self.vel_x > 0:
-        #         self.vel_x -= self.friction
-        #     elif self.vel_x < 0:
-        #         self.vel_x += self.friction
-
         # Horizontal movement with proper acceleration/deceleration
         if keys[pygame.K_a]:
             if self.vel_x > 0:  # If moving right and pressing left
@@ -272,33 +258,47 @@ class Player:
                              (int(p['x']), int(p['y'])), 
                              p['size'])
 
-    # def update(self, keys):
-    #     if self.dead:  # Don't process input if already dead
-    #         self.update_death_effect()
-    #         return
-            
-    #     self.handle_input(keys)
-    #     death_occurred = self.update_physics()
+    def get_damage_state(self):
+        """Returns damage level (0-3) based on health percentage"""
+        health_pct = self.health / 10  # Assuming max health is 10
+        if health_pct > 0.75:
+            return 0  # No damage
+        elif health_pct > 0.5:
+            return 1  # Light damage
+        elif health_pct > 0.25:
+            return 2  # Medium damage
+        else:
+            return 3  # Heavy damage
+    
+    def draw_health_bar(self, surface):
+        """Draws a health bar above the player"""
+        # Dimensions and positioning
+        bar_width = 50
+        bar_height = 5
+        outline_rect = pygame.Rect(self.x, self.y - 10, bar_width, bar_height)
+        fill_width = max(0, bar_width * (self.health / 10))
+        fill_rect = pygame.Rect(self.x, self.y - 10, fill_width, bar_height)
         
-    #     if death_occurred:
-    #         return  # Skip other updates if player just died
+        # Color based on health level
+        if self.health > 6:
+            fill_color = (0, 255, 0)  # Green
+        elif self.health > 3:
+            fill_color = (255, 255, 0)  # Yellow
+        else:
+            fill_color = (255, 0, 0)  # Red
         
-    #     # Shooting
-    #     if keys[pygame.K_SPACE]:
-    #         self.shoot()
-    #     if self.shoot_cooldown > 0:
-    #         self.shoot_cooldown -= 1
+        # Draw the bar
+        pygame.draw.rect(surface, (40, 40, 40), outline_rect)  # Background
+        pygame.draw.rect(surface, fill_color, fill_rect)  # Current health
+        pygame.draw.rect(surface, (100, 100, 100), outline_rect, 1)  # Border
         
-    #     # Update hit flash
-    #     if self.hit_flash > 0:
-    #         self.hit_flash -= 1
-    #         if self.hit_flash == 0:
-    #             self.invulnerable = False
-        
-    #     # Update particles
-    #     self.update_hit_particles()
-    #     if self.death_animation:
-    #         self.update_death_effect()
+        # Draw damage indicators
+        if self.health < 10:
+            for i in range(1, 3):
+                marker_pos = self.x + (bar_width * (i/3))
+                pygame.draw.line(surface, (70, 70, 70), 
+                            (marker_pos, self.y - 10), 
+                            (marker_pos, self.y - 5), 1)
 
     def update(self, keys):
         if self.dead:
@@ -328,35 +328,89 @@ class Player:
         
         # Update particles
         self.update_hit_particles()
+
+        # Add smoke particles when health is low
+        if self.health <= 3 and not self.dead and random.random() < 0.2:
+            self.hit_particles.append({
+                'x': self.rect.centerx - 10,
+                'y': self.rect.centery,
+                'dx': random.uniform(-1, -0.5),  # Smoke drifts left
+                'dy': random.uniform(-0.5, 0.5),
+                'size': random.randint(2, 4),
+                'life': random.randint(20, 40),
+                'color': (random.randint(50, 100), random.randint(50, 100), random.randint(50, 100))
+            })
         
         return False  # No death occurred
 
     def draw(self, surface):
         # Draw the plane
         if self.img and not self.death_animation:
-            # Calculate angle based on movement (more tilt when moving faster vertically)
-            angle = -self.vel_y * 2  # Adjust multiplier for more/less tilt
+            # Get damage state (0-3)
+            damage_state = self.get_damage_state()
+            
+            # Create a copy of the image to modify
+            plane_img = self.img.copy()
+            
+            # Apply damage effects based on health level
+            if damage_state >= 1:  # Light damage (health 5-7)
+                # Add scratches/dents
+                for _ in range(3):
+                    start_pos = (random.randint(5, 45), random.randint(5, 25))
+                    end_pos = (start_pos[0] + random.randint(-10, 10), 
+                            start_pos[1] + random.randint(-10, 10))
+                    pygame.draw.line(plane_img, (80, 80, 80), start_pos, end_pos, 1)
+            
+            if damage_state >= 2:  # Medium damage (health 3-4)
+                # Add bullet holes
+                for _ in range(2):
+                    hole_pos = (random.randint(5, 45), random.randint(5, 25))
+                    pygame.draw.circle(plane_img, (0, 0, 0), hole_pos, random.randint(1, 2))
+                    # Add metallic edge around holes
+                    pygame.draw.circle(plane_img, (150, 150, 150), hole_pos, random.randint(1, 2), 1)
+            
+            if damage_state >= 3:  # Heavy damage (health 1-2)
+                # Add smoke and fire effects
+                for _ in range(2):
+                    effect_pos = (random.randint(0, 10), random.randint(5, 25))
+                    if random.random() > 0.5:  # 50% chance for smoke or fire
+                        pygame.draw.circle(plane_img, (100, 100, 100, 150), effect_pos, random.randint(2, 3))
+                    else:
+                        pygame.draw.circle(plane_img, (255, random.randint(100, 150), 0), effect_pos, random.randint(1, 2))
+            
+            # Calculate angle based on movement
+            angle = -self.vel_y * 2  # More tilt when moving faster vertically
             
             # Store original center position before rotation
-            original_rect = self.img.get_rect(center=(self.x + self.img.get_width()//2, 
-                                                self.y + self.img.get_height()//2))
+            original_rect = plane_img.get_rect(center=(self.x + plane_img.get_width()//2, 
+                                                self.y + plane_img.get_height()//2))
             
-            # Rotate the image
-            rotated_img = pygame.transform.rotate(self.img, angle)
+            # Rotate the damaged image
+            rotated_img = pygame.transform.rotate(plane_img, angle)
             
             # Get rect of rotated image and set its center to original center
             rotated_rect = rotated_img.get_rect(center=original_rect.center)
             
             # Draw the rotated image
             surface.blit(rotated_img, rotated_rect.topleft)
+            
+            # Draw health bar if damaged
+            if self.health < 10:
+                self.draw_health_bar(surface)
         
         elif not self.death_animation:
-            # Fallback drawing
+            # Fallback drawing if no image
             pygame.draw.polygon(surface, (0, 120, 255), 
                             [(self.x+40, self.y+15), 
-                                (self.x, self.y), 
-                                (self.x, self.y+30)])
+                            (self.x, self.y), 
+                            (self.x, self.y+30)])
             
+            # Simple health indicator for fallback
+            if self.health < 10:
+                health_width = 40 * (self.health / 10)
+                pygame.draw.rect(surface, (255,0,0), (self.x, self.y-10, 40, 3))
+                pygame.draw.rect(surface, (0,255,0), (self.x, self.y-10, health_width, 3))
+        
         # Draw hit flash if active
         if self.hit_flash > 0 and self.hit_flash % 3 < 2 and not self.death_animation:
             flash_surf = pygame.Surface((self.rect.width, self.rect.height), pygame.SRCALPHA)
@@ -365,6 +419,8 @@ class Player:
         
         # Draw particles
         self.draw_hit_particles(surface)
+        
+        # Draw death effect if active
         if self.death_animation:
             self.draw_death_effect(surface)
 
@@ -1119,26 +1175,6 @@ while running:
     score_text = font.render(f"Score: {score}", True, WHITE)
     screen.blit(health_text, (10, 10))
     screen.blit(score_text, (10, 50))
-
-    # # 5. Death and Game Over Handling
-    # if player.dead and not game_over:
-    #     if player.death_animation_complete:
-    #         game_over = True
-    #         game_over_time = pygame.time.get_ticks()
-    #         # Clear all game objects
-    #         enemies.clear()
-    #         enemy_bullets.clear()
-    #         player.bullets.clear()
-    
-    # if game_over:
-    #     # Show game over for 2 seconds before quitting
-    #     game_over_text = font.render("GAME OVER - Final Score: " + str(score), True, WHITE)
-    #     screen.blit(game_over_text, (WIDTH//2 - 180, HEIGHT//2))
-        
-    #     if pygame.time.get_ticks() - game_over_time > 2000:
-    #         running = False
-
-    # In your main game loop (replace the current death handling section):
 
     # 5. Death and Game Over Handling
     if player.dead:
