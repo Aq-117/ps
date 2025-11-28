@@ -1,4 +1,4 @@
-#added enemy bullet damage
+#added restart functionality
 import pygame
 import random
 import sys
@@ -1140,6 +1140,16 @@ font = pygame.font.SysFont(None, 36)
 title_font = pygame.font.SysFont(None, 72)
 instruction_font = pygame.font.SysFont(None, 24)
 pakts_font = pygame.font.SysFont(None, 50)
+
+def restart_game():
+    global player, enemies, enemy_bullets, score, game_over, enemy_spawn_timer
+    player = Player()
+    enemies = []
+    enemy_bullets = []
+    score = 0
+    enemy_spawn_timer = 0
+    game_over = False
+
 def draw_start_screen():
     if bg_img:
         screen.blit(bg_img, (0, 0))
@@ -1259,6 +1269,12 @@ while running:
     for event in pygame.event.get():
         if event.type == pygame.QUIT:
             running = False
+
+        if game_over and event.type == pygame.KEYDOWN:
+            if event.key == pygame.K_r:    # Press R to restart
+                restart_game()
+            elif event.key == pygame.K_ESCAPE:  # Press ESC to quit
+                running = False
     
     # 2. Get Input
     keys = pygame.key.get_pressed()
@@ -1396,22 +1412,19 @@ while running:
         screen.blit(overlay, (0, 0))
         
         # Show game over text
-        game_over_text = font.render("GAME OVER", True, WHITE)
-        score_text = font.render(f"Final Score: {score}", True, WHITE)
-        restart_text = font.render("Press ESC to quit", True, WHITE)
+        texts = [
+            font.render("GAME OVER", True, WHITE),
+            font.render(f"Final Score: {score}", True, WHITE),
+            font.render("Press R to restart", True, WHITE),
+            font.render("Press ESC to quit", True, WHITE)
+        ]
         
-        screen.blit(game_over_text, (WIDTH//2 - game_over_text.get_width()//2, HEIGHT//2 - 50))
-        screen.blit(score_text, (WIDTH//2 - score_text.get_width()//2, HEIGHT//2))
-        screen.blit(restart_text, (WIDTH//2 - restart_text.get_width()//2, HEIGHT//2 + 50))
-        
-        # Check for exit or wait for timeout
-        for event in pygame.event.get():
-            if event.type == pygame.QUIT or (event.type == pygame.KEYDOWN and event.key == pygame.K_ESCAPE):
-                running = False
+        for i, text in enumerate(texts):
+            screen.blit(text, (WIDTH//2 - text.get_width()//2, HEIGHT//2 - 50 + i*40))
         
         # Auto-exit after 2 seconds if no input
-        if pygame.time.get_ticks() - game_over_time > 2000:
-            running = False
+        #if pygame.time.get_ticks() - game_over_time > 2000:
+        #    running = False
 
     # 6. Refresh Screen
     pygame.display.flip()
