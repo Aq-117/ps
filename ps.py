@@ -1,4 +1,4 @@
-#enemies have health bars
+#added enemy bullet damage
 import pygame
 import random
 import sys
@@ -74,7 +74,7 @@ class Player:
         self.x = 100
         self.y = HEIGHT // 2
         self.img = player_img
-        self.health = 10
+        self.health = 10.0
         self.bullets = []
         self.shoot_cooldown = 0
         self.shoot_delay = 15
@@ -525,7 +525,7 @@ class Enemy1:
         self.shoot_cooldown = random.randint(30, 90)
         if has_sound:
             shoot_sound.play()
-        return Bullet(self.x, self.y + 15, False)
+        return Bullet(self.x, self.y + 15, False, damage=1.5)
 
     def create_death_particles(self):
         for _ in range(15):
@@ -633,7 +633,7 @@ class Enemy2:
         self.shoot_cooldown = random.randint(20, 60)  # Faster shooting than type 1
         if has_sound:
             shoot_sound.play()
-        return Bullet(self.x, self.y + 15, False)
+        return Bullet(self.x, self.y + 15, False, damage = 1)
 
     def create_death_particles(self):
         for _ in range(15):
@@ -749,7 +749,7 @@ class Enemy3:
         self.shoot_cooldown = random.randint(40, 80)  # Different shooting pattern
         if has_sound:
             shoot_sound.play()
-        return Bullet(self.x, self.y + 15, False)
+        return Bullet(self.x, self.y + 15, False, damage=1)
     
     def create_death_particles(self):
         for _ in range(15):
@@ -786,6 +786,7 @@ class HomingMissile:
     def __init__(self, x, y, target_x, target_y):
         self.x = x
         self.y = y
+        self.damage = 1
         self.img = homing_missile_img
         self.base_speed = 3  # Reduced base speed
         self.rect = pygame.Rect(x, y, 10, 5)
@@ -915,7 +916,9 @@ class Enemy4:
         self.shoot_cooldown = 240  # 4 second cooldown (60*4)
         if has_sound:
             shoot_sound.play()
-        return HomingMissile(self.x, self.y + 15, player_x, player_y)
+            missile = HomingMissile(self.x, self.y + 15, player_x, player_y)
+            missile.damage = 2
+        return missile
     
     def create_death_particles(self):
         for _ in range(15):
@@ -1089,7 +1092,7 @@ class Enemy5:
         speed_y = 10 * math.sin(rad_angle)
         
         # Create directional bullet
-        bullet = Bullet(self.x, self.y + 15, False)
+        bullet = Bullet(self.x, self.y + 15, False, damage=2)
         bullet.speed_x = speed_x
         bullet.speed_y = speed_y
         return bullet
@@ -1319,7 +1322,7 @@ while running:
             if not remove_bullet and bullet.rect.colliderect(player.rect):
                 remove_bullet = True
                 if not player.invulnerable:
-                    player.health -= 1
+                    player.health -= bullet.damage
                     if player.health <= 0:
                         player.health = 0
                         player.init_death_effect()
@@ -1365,7 +1368,7 @@ while running:
             global_particles.remove(p)
 
     # Draw UI
-    health_text = font.render(f"Health: {player.health}", True, WHITE)
+    health_text = font.render(f"Health: {int(player.health)}", True, WHITE)
     score_text = font.render(f"Score: {score}", True, WHITE)
     screen.blit(health_text, (10, 10))
     screen.blit(score_text, (10, 50))
