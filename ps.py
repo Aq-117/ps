@@ -1,4 +1,4 @@
-#added pause, shop, updated health, dmg, cooldown values, smoke to enemy.
+#different smoke graphics for player, but not using them in future.
 import pygame
 import random
 import sys
@@ -334,16 +334,27 @@ class Player:
         # Update particles
         self.update_hit_particles()
 
-        # Add smoke particles when health is low
-        if self.health <= self.max_health * 0.5 and not self.dead and random.random() < 0.2:
+        if 0.3 < self.health/self.max_health <= 0.7 and random.random() < 0.15:  # 15% chance
             self.hit_particles.append({
                 'x': self.rect.centerx - 10,
                 'y': self.rect.centery,
-                'dx': random.uniform(-1, -0.5),  # Smoke drifts left
-                'dy': random.uniform(-1, -0.3), #previous -0.5, 0.5
-                'size': random.randint(2, 4),
+                'dx': random.uniform(-0.8, -0.3),  # Gentle left drift
+                'dy': random.uniform(-0.8, -0.2),  # Gentle upward drift
+                'size': random.randint(1, 3),      # Smaller particles
+                'life': random.randint(15, 30),
+                'color': (180, 180, 180)           # Light gray
+            })
+        
+        # Heavy smoke (<30% health)
+        elif  0< self.health/self.max_health <= 0.3 and random.random() < 0.25:  # 25% chance
+            self.hit_particles.append({
+                'x': self.rect.centerx - 10,
+                'y': self.rect.centery,
+                'dx': random.uniform(-1.2, -0.5),  # Stronger left drift
+                'dy': random.uniform(-1.0, -0.3),  # Stronger upward drift
+                'size': random.randint(2, 4),      # Larger particles
                 'life': random.randint(20, 40),
-                'color': (random.randint(50, 100), random.randint(50, 100), random.randint(50, 100))
+                'color': (120, 120, 120)           # Darker gray
             })
         
         return False  # No death occurred
