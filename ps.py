@@ -1,4 +1,4 @@
-#added restart functionality
+#added pause, shop, updated health, dmg, cooldown values, smoke to enemy.
 import pygame
 import random
 import sys
@@ -74,10 +74,13 @@ class Player:
         self.x = 100
         self.y = HEIGHT // 2
         self.img = player_img
-        self.health = 10.0
         self.bullets = []
         self.shoot_cooldown = 0
         self.shoot_delay = 15
+        self.max_health = 100      # Track max health separately
+        self.health = self.max_health
+        self.upgrade_cost_health = 100
+        self.upgrade_cost_firerate = 150
         
         # Physics parameters
         self.speed = 5
@@ -87,8 +90,8 @@ class Player:
         self.friction = 0.2
         self.gravity = 0.175
         self.lift = -0.7  # Negative because y increases downward
-        self.max_vertical_speed = 5
-        self.max_horizontal_speed = 5
+        self.max_vertical_speed = 6
+        self.max_horizontal_speed = 6
         self.gravity_cap = self.max_vertical_speed / 2  # Gravity can only reach half of max speed
         
         # Movement vectors
@@ -174,7 +177,7 @@ class Player:
         if self.shoot_cooldown <= 0:
             self.bullets.append(Bullet(self.x + self.rect.width, 
                                     self.y + self.rect.height//2, 
-                                    True, damage=1))
+                                    True, damage=10))
             self.shoot_cooldown = self.shoot_delay
             if has_sound:
                 shoot_sound.play()
@@ -260,7 +263,7 @@ class Player:
 
     def get_damage_state(self):
         """Returns damage level (0-3) based on health percentage"""
-        health_pct = self.health / 10  # Assuming max health is 10
+        health_pct = self.health / self.max_health  
         if health_pct > 0.75:
             return 0  # No damage
         elif health_pct > 0.5:
@@ -275,14 +278,16 @@ class Player:
         # Dimensions and positioning
         bar_width = 50
         bar_height = 5
+        health_percentage = self.health / self.max_health 
         outline_rect = pygame.Rect(self.x, self.y - 10, bar_width, bar_height)
-        fill_width = max(0, bar_width * (self.health / 10))
+        fill_width = max(0, bar_width * health_percentage)
+        # fill_width = max(0, bar_width * (self.health / 10))
         fill_rect = pygame.Rect(self.x, self.y - 10, fill_width, bar_height)
         
         # Color based on health level
-        if self.health > 6:
+        if health_percentage > 0.6:
             fill_color = (0, 255, 0)  # Green
-        elif self.health > 3:
+        elif health_percentage > 0.3:
             fill_color = (255, 255, 0)  # Yellow
         else:
             fill_color = (255, 0, 0)  # Red
@@ -293,7 +298,7 @@ class Player:
         pygame.draw.rect(surface, (100, 100, 100), outline_rect, 1)  # Border
         
         # Draw damage indicators
-        if self.health < 10:
+        if self.health < self.max_health:
             for i in range(1, 3):
                 marker_pos = self.x + (bar_width * (i/3))
                 pygame.draw.line(surface, (70, 70, 70), 
@@ -330,12 +335,12 @@ class Player:
         self.update_hit_particles()
 
         # Add smoke particles when health is low
-        if self.health <= 3 and not self.dead and random.random() < 0.2:
+        if self.health <= self.max_health * 0.5 and not self.dead and random.random() < 0.2:
             self.hit_particles.append({
                 'x': self.rect.centerx - 10,
                 'y': self.rect.centery,
                 'dx': random.uniform(-1, -0.5),  # Smoke drifts left
-                'dy': random.uniform(-0.5, 0.5),
+                'dy': random.uniform(-1, -0.3), #previous -0.5, 0.5
                 'size': random.randint(2, 4),
                 'life': random.randint(20, 40),
                 'color': (random.randint(50, 100), random.randint(50, 100), random.randint(50, 100))
@@ -395,7 +400,7 @@ class Player:
             surface.blit(rotated_img, rotated_rect.topleft)
             
             # Draw health bar if damaged
-            if self.health < 10:
+            if self.health < self.max_health:
                 self.draw_health_bar(surface)
         
         elif not self.death_animation:
@@ -406,8 +411,8 @@ class Player:
                             (self.x, self.y+30)])
             
             # Simple health indicator for fallback
-            if self.health < 10:
-                health_width = 40 * (self.health / 10)
+            if self.health < self.max_health:
+                health_width = 40 * (self.health / self.max_health)
                 pygame.draw.rect(surface, (255,0,0), (self.x, self.y-10, 40, 3))
                 pygame.draw.rect(surface, (0,255,0), (self.x, self.y-10, health_width, 3))
         
@@ -462,14 +467,15 @@ class Enemy1:
         self.x = WIDTH
         self.y = random.randint(50, HEIGHT - 50)
         self.img = enemy_img
-        self.speed = 3
-        self.shoot_cooldown = random.randint(30, 90)
+        self.speed = 2
+        self.shoot_cooldown = random.randint(30, 90) #earlier 30, 90
         self.rect = pygame.Rect(self.x, self.y, 40, 24)
         self.type = 1  # Add enemy type identifier
         self.death_particles = []
-        self.max_health = 1
+        self.max_health = 10
         self.health = self.max_health
         self.dead = False  # <-- Add this line
+        self.hit_particles = []
         
     def draw_health_bar(self, surface):
         if self.health < self.max_health:  # Only show if damaged
@@ -512,20 +518,50 @@ class Enemy1:
                     pygame.draw.circle(screen, 
                                     (random.randint(80, 120), random.randint(80, 120), random.randint(80, 120)),
                                     smoke_pos, random.randint(1, 3))
-        
+                    
+        for p in self.hit_particles:
+            pygame.draw.circle(screen, p['color'],  # Use global 'screen'
+                            (int(p['x']), int(p['y'])), 
+                            p['size'])
+
+        # Draw hit particles (using global screen)
+        for p in self.hit_particles:
+            pygame.draw.circle(screen, p['color'],  # Use global 'screen'
+                            (int(p['x']), int(p['y'])), 
+                            p['size'])
+
     def update(self):
         self.x -= self.speed
         self.rect.x = self.x
         self.shoot_cooldown -= 1
+
+        # Add smoke particles when health is low (≤50% health)
+        if self.health <= self.max_health * 0.5 and not self.dead and random.random() < 0.2:
+            self.hit_particles.append({
+                'x': self.rect.centerx - 10,
+                'y': self.rect.centery,
+                'dx': random.uniform(-1, -0.5),  # Smoke drifts left
+                'dy': random.uniform(-1, -0.3),
+                'size': random.randint(2, 4),
+                'life': random.randint(20, 40),
+                'color': (random.randint(50, 100), random.randint(50, 100), random.randint(50, 100))
+            })
+        
+        # Update existing particles
+        for p in self.hit_particles[:]:
+            p['life'] -= 1
+            if p['life'] <= 0:
+                self.hit_particles.remove(p)
+        
         
     def should_shoot(self, player=None):
         return self.shoot_cooldown <= 0
         
     def shoot(self):
-        self.shoot_cooldown = random.randint(30, 90)
+        self.shoot_cooldown = random.randint(70, 120)
         if has_sound:
             shoot_sound.play()
-        return Bullet(self.x, self.y + 15, False, damage=1.5)
+        return Bullet(self.x, self.y + 15, False, damage=15)
 
     def create_death_particles(self):
         for _ in range(15):
@@ -558,7 +594,7 @@ class Enemy1:
             if p['life'] <= 0:
                 self.death_particles.remove(p)
 
-# Enemy Type 2: Stops at 10% of screen and stays still
+# Enemy Type 2: Stops at 20% of screen and stays still
 class Enemy2:
     def __init__(self):
         self.stop_x = WIDTH * 0.8  # 20% from right
@@ -566,14 +602,15 @@ class Enemy2:
         self.y = random.randint(50, HEIGHT - 50)
         self.img = enemy_img
         self.speed = 3
-        self.shoot_cooldown = random.randint(30, 90)
+        self.shoot_cooldown = random.randint(30, 90) #30, 90
         self.rect = pygame.Rect(self.x, self.y, 40, 24)
         self.type = 2
         self.has_stopped = False
         self.death_particles = []
-        self.max_health = 3
+        self.max_health = 30
         self.health = self.max_health
         self.dead = False  # <-- Add this line
+        self.hit_particles = []
         
     def draw_health_bar(self, surface):
         if self.health < self.max_health:  # Only show if damaged
@@ -616,7 +653,13 @@ class Enemy2:
                     pygame.draw.circle(screen, 
                                     (random.randint(80, 120), random.randint(80, 120), random.randint(80, 120)),
                                     smoke_pos, random.randint(1, 3))
-        
+
+        # Draw hit particles (using global screen)
+        for p in self.hit_particles:
+            pygame.draw.circle(screen, p['color'],  # Use global 'screen'
+                            (int(p['x']), int(p['y'])), 
+                            p['size'])
+
     def update(self):
         if not self.has_stopped:
             self.x -= self.speed
@@ -625,15 +668,33 @@ class Enemy2:
             self.rect.x = self.x
         
         self.shoot_cooldown -= 1
+
+        # Add smoke particles when health is low (≤50% health)
+        if self.health <= self.max_health * 0.5 and not self.dead and random.random() < 0.2:
+            self.hit_particles.append({
+                'x': self.rect.centerx - 10,
+                'y': self.rect.centery,
+                'dx': random.uniform(-1, -0.5),  # Smoke drifts left
+                'dy': random.uniform(-1, -0.3),
+                'size': random.randint(2, 4),
+                'life': random.randint(20, 40),
+                'color': (random.randint(50, 100), random.randint(50, 100), random.randint(50, 100))
+            })
+        
+        # Update existing particles
+        for p in self.hit_particles[:]:
+            p['life'] -= 1
+            if p['life'] <= 0:
+                self.hit_particles.remove(p)
         
     def should_shoot(self, player=None):
         return self.shoot_cooldown <= 0
         
     def shoot(self):
-        self.shoot_cooldown = random.randint(20, 60)  # Faster shooting than type 1
+        self.shoot_cooldown = random.randint(50, 90)  #  20, 60 Faster shooting than type 1
         if has_sound:
             shoot_sound.play()
-        return Bullet(self.x, self.y + 15, False, damage = 1)
+        return Bullet(self.x, self.y + 15, False, damage = 10)
 
     def create_death_particles(self):
         for _ in range(15):
@@ -676,14 +737,15 @@ class Enemy3:
         self.speed = 3
         self.vertical_speed = 1.5
         self.direction = 1  # 1 for down, -1 for up
-        self.shoot_cooldown = random.randint(30, 90)
+        self.shoot_cooldown = random.randint(60, 100)
         self.rect = pygame.Rect(self.x, self.y, 40, 24)
         self.type = 3
         self.has_stopped = False
         self.death_particles = []
-        self.max_health = 2
+        self.max_health = 20
         self.health = self.max_health
         self.dead = False  # <-- Add this line
+        self.hit_particles = []
         
     def draw_health_bar(self, surface):
         if self.health < self.max_health:  # Only show if damaged
@@ -727,6 +789,12 @@ class Enemy3:
                                     (random.randint(80, 120), random.randint(80, 120), random.randint(80, 120)),
                                     smoke_pos, random.randint(1, 3))
         
+        # Draw hit particles (using global screen)
+        for p in self.hit_particles:
+            pygame.draw.circle(screen, p['color'],  # Use global 'screen'
+                            (int(p['x']), int(p['y'])), 
+                            p['size'])
+
     def update(self):
         if not self.has_stopped:
             self.x -= self.speed
@@ -741,15 +809,33 @@ class Enemy3:
             self.rect.y = self.y
         
         self.shoot_cooldown -= 1
+
+        # Add smoke particles when health is low (≤50% health)
+        if self.health <= self.max_health * 0.5 and not self.dead and random.random() < 0.2:
+            self.hit_particles.append({
+                'x': self.rect.centerx - 10,
+                'y': self.rect.centery,
+                'dx': random.uniform(-1, -0.5),  # Smoke drifts left
+                'dy': random.uniform(-1, -0.3),
+                'size': random.randint(2, 4),
+                'life': random.randint(20, 40),
+                'color': (random.randint(50, 100), random.randint(50, 100), random.randint(50, 100))
+            })
+        
+        # Update existing particles
+        for p in self.hit_particles[:]:
+            p['life'] -= 1
+            if p['life'] <= 0:
+                self.hit_particles.remove(p)
         
     def should_shoot(self, player=None):
         return self.shoot_cooldown <= 0
         
     def shoot(self):
-        self.shoot_cooldown = random.randint(40, 80)  # Different shooting pattern
+        self.shoot_cooldown = random.randint(50, 100)  # Different shooting pattern
         if has_sound:
             shoot_sound.play()
-        return Bullet(self.x, self.y + 15, False, damage=1)
+        return Bullet(self.x, self.y + 15, False, damage=10)
     
     def create_death_particles(self):
         for _ in range(15):
@@ -852,9 +938,10 @@ class Enemy4:
         self.rect = pygame.Rect(self.x, self.y, 50, 30)
         self.type = 4
         self.death_particles = []
-        self.max_health = 2
+        self.max_health = 20
         self.health = self.max_health
         self.dead = False  # <-- Add this line
+        self.hit_particles = []
         
     def draw_health_bar(self, surface):
         if self.health < self.max_health:  # Only show if damaged
@@ -897,6 +984,12 @@ class Enemy4:
                     pygame.draw.circle(screen, 
                                     (random.randint(80, 120), random.randint(80, 120), random.randint(80, 120)),
                                     smoke_pos, random.randint(1, 3))
+                    
+        # Draw hit particles (using global screen)
+        for p in self.hit_particles:
+            pygame.draw.circle(screen, p['color'],  # Use global 'screen'
+                            (int(p['x']), int(p['y'])), 
+                            p['size'])
                 
     def update(self):
         if self.x > self.stop_x:
@@ -905,6 +998,24 @@ class Enemy4:
         
         if self.shoot_cooldown > 0:
             self.shoot_cooldown -= 1
+
+        # Add smoke particles when health is low (≤50% health)
+        if self.health <= self.max_health * 0.5 and not self.dead and random.random() < 0.2:
+            self.hit_particles.append({
+                'x': self.rect.centerx - 10,
+                'y': self.rect.centery,
+                'dx': random.uniform(-1, -0.5),  # Smoke drifts left
+                'dy': random.uniform(-1, -0.3),
+                'size': random.randint(2, 4),
+                'life': random.randint(20, 40),
+                'color': (random.randint(50, 100), random.randint(50, 100), random.randint(50, 100))
+            })
+        
+        # Update existing particles
+        for p in self.hit_particles[:]:
+            p['life'] -= 1
+            if p['life'] <= 0:
+                self.hit_particles.remove(p)
         
     def should_shoot(self, player):
         # Only shoot if cooldown is 0 and we're in position
@@ -917,7 +1028,7 @@ class Enemy4:
         if has_sound:
             shoot_sound.play()
             missile = HomingMissile(self.x, self.y + 15, player_x, player_y)
-            missile.damage = 2
+            missile.damage = 20
         return missile
     
     def create_death_particles(self):
@@ -969,7 +1080,7 @@ class Enemy5:
         self.type = 5
         self.dead = False
         self.set_new_angle()  # Initialize first angle
-        self.max_health = 1
+        self.max_health = 10
         self.health = self.max_health
         self.death_particles = []
 
@@ -1092,7 +1203,7 @@ class Enemy5:
         speed_y = 10 * math.sin(rad_angle)
         
         # Create directional bullet
-        bullet = Bullet(self.x, self.y + 15, False, damage=2)
+        bullet = Bullet(self.x, self.y + 15, False, damage=20)
         bullet.speed_x = speed_x
         bullet.speed_y = speed_y
         return bullet
@@ -1142,12 +1253,13 @@ instruction_font = pygame.font.SysFont(None, 24)
 pakts_font = pygame.font.SysFont(None, 50)
 
 def restart_game():
-    global player, enemies, enemy_bullets, score, game_over, enemy_spawn_timer
+    global player, enemies, enemy_bullets, score, enemy_spawn_timer, game_state, game_over
     player = Player()
     enemies = []
     enemy_bullets = []
     score = 0
     enemy_spawn_timer = 0
+    game_state = "running"  # Reset to running state
     game_over = False
 
 def draw_start_screen():
@@ -1212,7 +1324,7 @@ def check_collisions():
                     global_particles.extend(enemy.death_particles)
                     player.bullets.remove(bullet)
                     enemies.remove(enemy)
-                    score += 10 * enemy.max_health  # More points for tougher enemies
+                    score += 1 * enemy.max_health  # More points for tougher enemies
                     if has_sound:
                         explosion_sound.play()
                 else:
@@ -1243,45 +1355,166 @@ def check_collisions():
                     explosion_sound.play()
             break
 
-def game_over():
-    global game_over_triggered, running
-    if game_over_triggered:
-        return
-    game_over_triggered = True
-    text = font.render(f"GAME OVER - Score: {score}", True, WHITE)
-    screen.blit(text, (WIDTH//2 - 150, HEIGHT//2))
-    pygame.display.flip()
-    pygame.time.wait(3000)
-    running = False  # Ensure main loop exits
-    if has_sound:
-        pygame.mixer.music.stop()
-    pygame.quit()
-    sys.exit()
+# def game_over():
+#     global game_over_triggered, running
+#     if game_over_triggered:
+#         return
+#     game_over_triggered = True
+#     text = font.render(f"GAME OVER - Score: {score}", True, WHITE)
+#     screen.blit(text, (WIDTH//2 - 150, HEIGHT//2))
+#     pygame.display.flip()
+#     pygame.time.wait(3000)
+#     running = False  # Ensure main loop exits
+#     if has_sound:
+#         pygame.mixer.music.stop()
+#     pygame.quit()
+#     sys.exit()
+
+def draw_shop():
+    screen.fill((0, 0, 50))  # Dark blue background
+    title = font.render("UPGRADE SHOP", True, WHITE)
+    screen.blit(title, (WIDTH//2 - title.get_width()//2, 50))
+    
+    # Upgrade options
+    options = [
+        (f"1. +10 Max Health (Cost: {player.upgrade_cost_health})", 
+         player.upgrade_cost_health, "health"),
+        (f"2. Faster Fire Rate (Cost: {player.upgrade_cost_firerate})", 
+         player.upgrade_cost_firerate, "firerate"),
+        ("3. Exit Shop", 0, "exit")
+    ]
+    
+    for i, (text, cost, _) in enumerate(options):
+        y_pos = 150 + i * 60
+        # Gray out if unaffordable
+        color = WHITE if score >= cost or cost == 0 else (100, 100, 100)
+        screen.blit(font.render(text, True, color), (WIDTH//2 - 200, y_pos))
+    
+    # Display current stats
+    stats = [
+        f"Current Max Health: {player.max_health}",
+        f"Current Fire Rate: {60/(player.shoot_delay):.1f} shots/sec",  # Convert delay to shots/second
+        f"Your Score: {score}"
+    ]
+    for i, stat in enumerate(stats):
+        screen.blit(font.render(stat, True, WHITE), (WIDTH//2 - 200, 350 + i * 40))
+
+def draw_pause_screen():
+    overlay = pygame.Surface((WIDTH, HEIGHT), pygame.SRCALPHA)
+    overlay.fill((0, 0, 0, 180))  # Semi-transparent black
+    screen.blit(overlay, (0, 0))
+    
+    texts = [
+        ("PAUSED", title_font),
+        ("Press P to Resume", font),
+        ("Press 5 for Shop", font),
+        ("Press ESC to Quit", font)
+    ]
+    
+    for i, (text, font_obj) in enumerate(texts):
+        rendered = font_obj.render(text, True, WHITE)
+        screen.blit(rendered, (WIDTH//2 - rendered.get_width()//2, 
+                             HEIGHT//2 - 100 + i * 50))
 
 # Main game loop
+game_state = "running"  # Can be "running", "paused", "shop", "game_over"
 running = True
 game_over = False
 game_over_time = 0
 clock = pygame.time.Clock()
 
 while running:
-    # 1. Event Handling
+    # # 1. Event Handling
+    # for event in pygame.event.get():
+    #     if event.type == pygame.QUIT:
+    #         running = False
+
+    #     if event.type == pygame.KEYDOWN:
+    #         if event.key == pygame.K_p and not game_over:  # Toggle pause
+    #             paused = not paused
+            
+    #         if paused:  # Only process these when paused
+    #             if event.key == pygame.K_5:  # Enter shop from pause
+    #                 paused = False
+    #                 shop_active = True
+                
+    #             if event.key == pygame.K_p:  # Resume
+    #                 paused = False
+
+    #     if game_over and event.type == pygame.KEYDOWN:
+    #         if event.key == pygame.K_r:    # Press R to restart
+    #             restart_game()
+    #         #elif event.key == pygame.K_s:
+    #         #    shop_active = True
+    #         elif event.key == pygame.K_ESCAPE:  # Press ESC to quit
+    #             running = False
+
+    #     if shop_active and event.type == pygame.KEYDOWN:
+    #         if event.key == pygame.K_1 and score >= player.upgrade_cost_health:
+    #             player.max_health += 1
+    #             player.health = player.max_health  # Refill health
+    #             score -= player.upgrade_cost_health
+    #             player.upgrade_cost_health += 50  # Increase cost for next purchase
+            
+    #         elif event.key == pygame.K_2 and score >= player.upgrade_cost_firerate:
+    #             player.shoot_delay = max(5, player.shoot_delay - 3)  # Faster firing (min delay = 5)
+    #             score -= player.upgrade_cost_firerate
+    #             player.upgrade_cost_firerate += 75
+            
+    #         elif event.key == pygame.K_3:
+    #             shop_active = False  # Exit shop
+
     for event in pygame.event.get():
         if event.type == pygame.QUIT:
             running = False
+        
+        if event.type == pygame.KEYDOWN:
+            # Global controls (work in any state)
+            if event.key == pygame.K_ESCAPE:
+                if game_state == "shop":
+                    game_state = "paused"  # Return to pause from shop
+                else:
+                    running = False
+            
+            # State-specific controls
+            if game_state == "running":
+                if event.key == pygame.K_p:
+                    game_state = "paused"
+            
+            elif game_state == "paused":
+                if event.key == pygame.K_p:
+                    game_state = "running"
+                elif event.key == pygame.K_5:
+                    game_state = "shop"
+            
+            elif game_state == "shop":
+                if event.key == pygame.K_3:
+                    game_state = "paused"  # Return to pause menu
+                elif event.key == pygame.K_1 and score >= player.upgrade_cost_health:
+                    player.max_health += 10
+                    player.health += 10
+                    score -= player.upgrade_cost_health
+                    player.upgrade_cost_health += 50
+                elif event.key == pygame.K_2 and score >= player.upgrade_cost_firerate:
+                    player.shoot_delay = max(5, player.shoot_delay - 3)
+                    score -= player.upgrade_cost_firerate
+                    player.upgrade_cost_firerate += 75
+            
+            elif game_state == "game_over":
+                if event.key == pygame.K_r:
+                    restart_game()
+                    game_state = "running"
+                elif event.key == pygame.K_ESCAPE:
+                    running = False
 
-        if game_over and event.type == pygame.KEYDOWN:
-            if event.key == pygame.K_r:    # Press R to restart
-                restart_game()
-            elif event.key == pygame.K_ESCAPE:  # Press ESC to quit
-                running = False
-    
     # 2. Get Input
     keys = pygame.key.get_pressed()
+
+    #if not game_over and not shop_active:  # Pause gameplay when shopping
+    #    player.update(keys)
     
     # 3. Update Game State
-    if not player.dead and not game_over:
-        # Update player with proper physics
+    if game_state == "running" and not player.dead:
         player.update(keys)
         
         # Spawn enemies
@@ -1384,10 +1617,18 @@ while running:
             global_particles.remove(p)
 
     # Draw UI
-    health_text = font.render(f"Health: {int(player.health)}", True, WHITE)
+    health_text = font.render(f"Health: {player.health}/{player.max_health}", True, WHITE)
     score_text = font.render(f"Score: {score}", True, WHITE)
     screen.blit(health_text, (10, 10))
     screen.blit(score_text, (10, 50))
+
+    # Draw state overlays
+    if game_state == "paused":
+        draw_pause_screen()
+    elif game_state == "shop":
+        draw_shop()
+    elif game_state == "game_over":
+        game_over = True
 
     # 5. Death and Game Over Handling
     if player.dead:
@@ -1395,6 +1636,7 @@ while running:
         death_complete = player.update(keys)  # This now returns True when animation finishes
         
         if death_complete and not game_over:
+            game_state = "game_over"
             game_over = True
             game_over_time = pygame.time.get_ticks()
             # Clear all game objects
@@ -1405,7 +1647,7 @@ while running:
             if has_sound:
                 explosion_sound.play()
 
-    if game_over:
+    if game_state == "game_over":
         # Draw game over overlay (semi-transparent)
         overlay = pygame.Surface((WIDTH, HEIGHT), pygame.SRCALPHA)
         overlay.fill((0, 0, 0, 180))  # Semi-transparent black
@@ -1416,7 +1658,8 @@ while running:
             font.render("GAME OVER", True, WHITE),
             font.render(f"Final Score: {score}", True, WHITE),
             font.render("Press R to restart", True, WHITE),
-            font.render("Press ESC to quit", True, WHITE)
+            font.render("Press ESC to quit", True, WHITE),
+            #font.render("Press S to open shop", True, WHITE) if not shop_active else font.render("Press S to close shop", True, WHITE)
         ]
         
         for i, text in enumerate(texts):
