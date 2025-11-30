@@ -1,4 +1,6 @@
-#different smoke graphics for player, but not using them in future.
+# added mouse control for movement and shooting
+# added enemy6(left to right), enemy7(bomber)
+# added planes_destroyed counter
 import pygame
 import random
 import sys
@@ -45,8 +47,8 @@ except:
     bg_img = None
 
 player_img = load_image("player.png", 0.7)
-enemy_img = load_image("enemy.jpg", 0.7)
-bullet_img = load_image("bullet.png", 0.5)
+enemy_img = load_image("enemy.png", 0.7)
+bullet_img = load_image("bullet-1.png", 0.5)
 
 # After loading images, force specific sizes:
 player_img = pygame.transform.scale(player_img, (50, 30))      # Width, Height
@@ -106,40 +108,100 @@ class Player:
         self.death_particles = []
         self.hit_particles = []
         self.dead = False
+
+        self.mouse_control = False  # Add this flag
+        self.mouse_sensitivity = 0.3  # Adjust this value as needed
+        self.mouse_button_down = False
+
+        # # Load sounds
+        # self.engine_idle_sound = pygame.mixer.Sound("assets/sounds/engine_idle.wav")
+        # self.engine_accel_sound = pygame.mixer.Sound("assets/sounds/engine_accel.wav")
+        # self.engine_idle_sound.play(-1)  # Loop idle sound forever
+        # self.engine_idle_sound.set_volume(0.3)
+        # self.is_accelerating = False
         
         self.rect = pygame.Rect(self.x, self.y, 
                                self.img.get_width() if self.img else 40,
                                self.img.get_height() if self.img else 30)
 
-    def handle_input(self, keys):
-        # Horizontal movement with proper acceleration/deceleration
-        if keys[pygame.K_a]:
-            if self.vel_x > 0:  # If moving right and pressing left
-                self.vel_x = max(0, self.vel_x - self.turn_speed)  # Slow down first
-            else:
-                self.vel_x = max(-self.max_horizontal_speed, self.vel_x - self.acceleration)
-        elif keys[pygame.K_d]:
-            if self.vel_x < 0:  # If moving left and pressing right
-                self.vel_x = min(0, self.vel_x + self.turn_speed)  # Slow down first
-            else:
-                self.vel_x = min(self.max_horizontal_speed, self.vel_x + self.acceleration)
+    def handle_input(self, keys, mouse_pos=None):
+        # if self.mouse_control and mouse_pos:
+        #     # Mouse-based movement
+        #     target_x, target_y = mouse_pos
+            
+        #     # Horizontal movement (smooth follow)
+        #     dx = target_x - self.x
+        #     self.vel_x = dx * self.mouse_sensitivity
+            
+        #     # Vertical movement (smooth follow)
+        #     dy = target_y - self.y
+        #     self.vel_y = dy * self.mouse_sensitivity
+            
+        #     # Clamp velocities
+        #     self.vel_x = max(-self.max_horizontal_speed, min(self.max_horizontal_speed, self.vel_x))
+        #     self.vel_y = max(-self.max_vertical_speed, min(self.max_vertical_speed, self.vel_y))
+        if self.mouse_control and mouse_pos:
+            # Mouse-based movement with smoother acceleration
+            target_x, target_y = mouse_pos
+            
+            # Calculate distance to target
+            dx = target_x - (self.x + self.rect.width/2)
+            dy = target_y - (self.y + self.rect.height/2)
+            distance = max(1, (dx**2 + dy**2)**0.5)  # Avoid division by zero
+            
+            # Normalize direction and apply acceleration
+            target_vel_x = (dx / distance) * self.max_horizontal_speed
+            target_vel_y = (dy / distance) * self.max_vertical_speed
+            
+            # Smoothly approach target velocity
+            self.vel_x += (target_vel_x - self.vel_x) * 0.1
+            self.vel_y += (target_vel_y - self.vel_y) * 0.1
+            
+            # Apply slight gravity when not actively moving
+            if distance < 20:  # If close to target
+                self.vel_y += self.gravity * 0.5
         else:
-            # Gradual deceleration when no key is pressed
-            if self.vel_x > 0:
-                self.vel_x = max(0, self.vel_x - self.deceleration)
-            elif self.vel_x < 0:
-                self.vel_x = min(0, self.vel_x + self.deceleration)
-        
-        # Vertical movement
-        if keys[pygame.K_w]:
-            self.vel_y = max(self.vel_y + self.lift, -self.max_vertical_speed)  # Upward movement with lift
-        elif keys[pygame.K_s]:
-            # Downward movement - can exceed natural gravity limit
-            self.vel_y = min(self.vel_y + self.acceleration, self.max_vertical_speed)
-        else:
-            # Natural gravity - limited to half of max vertical speed
-            gravity_effect = min(self.gravity, self.max_vertical_speed/2 - self.vel_y)
-            self.vel_y += gravity_effect
+            # Keyboard-based movement
+            # Horizontal movement with proper acceleration/deceleration
+            if keys[pygame.K_a]:
+                if self.vel_x > 0:  # If moving right and pressing left
+                    self.vel_x = max(0, self.vel_x - self.turn_speed)  # Slow down first
+                else:
+                    self.vel_x = max(-self.max_horizontal_speed, self.vel_x - self.acceleration)
+            elif keys[pygame.K_d]:
+                if self.vel_x < 0:  # If moving left and pressing right
+                    self.vel_x = min(0, self.vel_x + self.turn_speed)  # Slow down first
+                else:
+                    self.vel_x = min(self.max_horizontal_speed, self.vel_x + self.acceleration)
+            else:
+                # Gradual deceleration when no key is pressed
+                if self.vel_x > 0:
+                    self.vel_x = max(0, self.vel_x - self.deceleration)
+                elif self.vel_x < 0:
+                    self.vel_x = min(0, self.vel_x + self.deceleration)
+            
+            # Vertical movement
+            if keys[pygame.K_w]:
+                self.vel_y = max(self.vel_y + self.lift, -self.max_vertical_speed)  # Upward movement with lift
+            elif keys[pygame.K_s]:
+                # Downward movement - can exceed natural gravity limit
+                self.vel_y = min(self.vel_y + self.acceleration, self.max_vertical_speed)
+            else:
+                # Natural gravity - limited to half of max vertical speed
+                gravity_effect = min(self.gravity, self.max_vertical_speed/2 - self.vel_y)
+                #gravity_effect = min(self.gravity, self.gravity_cap - abs(self.vel_y))
+                self.vel_y += gravity_effect
+
+            # # Sound - Check if any movement key is pressed
+            # if keys[pygame.K_w] or keys[pygame.K_a] or keys[pygame.K_s] or keys[pygame.K_d]:
+            #     if not self.is_accelerating:
+            #         self.engine_accel_sound.play(-1)  # Loop acceleration
+            #         self.engine_accel_sound.set_volume(0.5)
+            #         self.is_accelerating = True
+            # else:
+            #     if self.is_accelerating:
+            #         self.engine_accel_sound.stop()
+            #         self.is_accelerating = False
         
         # Clamp horizontal speed
         self.vel_x = max(-self.max_horizontal_speed, min(self.max_horizontal_speed, self.vel_x))
@@ -153,8 +215,8 @@ class Player:
         if self.x < 0:
             self.x = 0
             self.vel_x = 0
-        if self.x > WIDTH // 2:
-            self.x = WIDTH // 2
+        if self.x > WIDTH - self.rect.width:
+            self.x = WIDTH - self.rect.width
             self.vel_x = 0
         if self.y < 0:
             self.y = 0
@@ -305,14 +367,14 @@ class Player:
                             (marker_pos, self.y - 10), 
                             (marker_pos, self.y - 5), 1)
 
-    def update(self, keys):
+    def update(self, keys, mouse_pos=None):
         if self.dead:
             # Only update death animation if dead
             death_complete = self.update_death_effect()
             return death_complete
             
         # Handle normal player updates
-        self.handle_input(keys)
+        self.handle_input(keys, mouse_pos)
         
         # Update physics
         death_occurred = self.update_physics()
@@ -320,7 +382,7 @@ class Player:
             return False  # Death just occurred
         
         # Handle shooting
-        if keys[pygame.K_SPACE]:
+        if keys[pygame.K_SPACE] or self.mouse_button_down:
             self.shoot()
         if self.shoot_cooldown > 0:
             self.shoot_cooldown -= 1
@@ -334,27 +396,16 @@ class Player:
         # Update particles
         self.update_hit_particles()
 
-        if 0.3 < self.health/self.max_health <= 0.7 and random.random() < 0.15:  # 15% chance
+        # Add smoke particles when health is low
+        if self.health <= self.max_health * 0.5 and not self.dead and random.random() < 0.2:
             self.hit_particles.append({
                 'x': self.rect.centerx - 10,
                 'y': self.rect.centery,
-                'dx': random.uniform(-0.8, -0.3),  # Gentle left drift
-                'dy': random.uniform(-0.8, -0.2),  # Gentle upward drift
-                'size': random.randint(1, 3),      # Smaller particles
-                'life': random.randint(15, 30),
-                'color': (180, 180, 180)           # Light gray
-            })
-        
-        # Heavy smoke (<30% health)
-        elif  0< self.health/self.max_health <= 0.3 and random.random() < 0.25:  # 25% chance
-            self.hit_particles.append({
-                'x': self.rect.centerx - 10,
-                'y': self.rect.centery,
-                'dx': random.uniform(-1.2, -0.5),  # Stronger left drift
-                'dy': random.uniform(-1.0, -0.3),  # Stronger upward drift
-                'size': random.randint(2, 4),      # Larger particles
+                'dx': random.uniform(-1, -0.5),  # Smoke drifts left
+                'dy': random.uniform(-1, -0.3), #previous -0.5, 0.5
+                'size': random.randint(2, 4),
                 'life': random.randint(20, 40),
-                'color': (120, 120, 120)           # Darker gray
+                'color': (random.randint(50, 100), random.randint(50, 100), random.randint(50, 100))
             })
         
         return False  # No death occurred
@@ -427,6 +478,17 @@ class Player:
                 pygame.draw.rect(surface, (255,0,0), (self.x, self.y-10, 40, 3))
                 pygame.draw.rect(surface, (0,255,0), (self.x, self.y-10, health_width, 3))
         
+        # Draw mouse target indicator when in mouse control mode
+        if self.mouse_control:
+            mouse_pos = pygame.mouse.get_pos()
+            pygame.draw.circle(surface, (255, 255, 0), mouse_pos, 5, 1)
+            pygame.draw.line(surface, (255, 255, 0), 
+                            (mouse_pos[0]-10, mouse_pos[1]), 
+                            (mouse_pos[0]+10, mouse_pos[1]), 1)
+            pygame.draw.line(surface, (255, 255, 0), 
+                            (mouse_pos[0], mouse_pos[1]-10), 
+                            (mouse_pos[0], mouse_pos[1]+10), 1)
+    
         # Draw hit flash if active
         if self.hit_flash > 0 and self.hit_flash % 3 < 2 and not self.death_animation:
             flash_surf = pygame.Surface((self.rect.width, self.rect.height), pygame.SRCALPHA)
@@ -453,6 +515,10 @@ class Bullet:
         # Default straight movement
         self.speed_x = 10 if is_player else -7
         self.speed_y = 0
+
+        # Flip enemy bullets to face their direction
+        if not is_player:
+            self.img = pygame.transform.flip(self.img, True, False)
         
     def update(self):
         self.x += self.speed_x
@@ -618,7 +684,7 @@ class Enemy2:
         self.type = 2
         self.has_stopped = False
         self.death_particles = []
-        self.max_health = 30
+        self.max_health = 20
         self.health = self.max_health
         self.dead = False  # <-- Add this line
         self.hit_particles = []
@@ -1250,12 +1316,288 @@ class Enemy5:
             if p['life'] <= 0:
                 self.death_particles.remove(p)
 
+class Enemy6:
+    def __init__(self):
+        self.x = -100  # Start off-screen LEFT (instead of right like others)
+        self.y = random.randint(50, HEIGHT - 50)
+        self.img = enemy_img  # Use your existing enemy image or create a new one
+        self.speed = 3 #random.uniform(3, 4)  # Rightward movement (positive speed)
+        self.rect = pygame.Rect(self.x, self.y, 40, 24)
+        self.type = 6
+        self.death_particles = []
+        self.max_health = 10  # Slightly tougher than Enemy1
+        self.health = self.max_health
+        self.dead = False
+        self.hit_particles = []
+        self.shoot_cooldown = random.randint(60, 120)
+
+    def draw_health_bar(self, surface):
+        if self.health < self.max_health:
+            bar_width = 40
+            bar_height = 4
+            outline_rect = pygame.Rect(self.x, self.y - 8, bar_width, bar_height)
+            fill_rect = pygame.Rect(self.x, self.y - 8, bar_width * (self.health/self.max_health), bar_height)
+            
+            health_pct = self.health / self.max_health
+            if health_pct > 0.6:
+                color = (0, 255, 0)  # Green
+            elif health_pct > 0.3:
+                color = (255, 255, 0)  # Yellow
+            else:
+                color = (255, 0, 0)  # Red
+                
+            pygame.draw.rect(surface, (40, 40, 40), outline_rect)
+            pygame.draw.rect(surface, color, fill_rect)
+            pygame.draw.rect(surface, (100, 100, 100), outline_rect, 1)
+
+    def draw(self):
+        # Flip image horizontally since it's moving rightward
+        flipped_img = pygame.transform.flip(self.img, True, False)
+        screen.blit(flipped_img, (self.x, self.y))
+        
+        self.draw_health_bar(screen)
+        
+        if self.health < self.max_health:
+            damage_pct = 1 - (self.health / self.max_health)
+            if damage_pct > 0.5:
+                for _ in range(int(2 * damage_pct)):
+                    smoke_pos = (
+                        self.x + random.randint(0, self.rect.width),
+                        self.y + random.randint(0, self.rect.height)
+                    )
+                    pygame.draw.circle(screen, 
+                                    (random.randint(80, 120), random.randint(80, 120), random.randint(80, 120)),
+                                    smoke_pos, random.randint(1, 3))
+        
+        for p in self.hit_particles:
+            pygame.draw.circle(screen, p['color'], (int(p['x']), int(p['y'])), p['size'])
+
+    def update(self):
+        self.x += self.speed  # Move RIGHT (positive speed)
+        self.rect.x = self.x
+
+        if self.shoot_cooldown > 0:
+            self.shoot_cooldown -= 1
+
+        # Add smoke trail (different from other enemies)
+        if random.random() < 0.2:
+            self.hit_particles.append({
+                'x': self.rect.left + 5,
+                'y': self.rect.centery,
+                'dx': random.uniform(-1.5, -0.5),  # Drift left
+                'dy': random.uniform(-0.3, 0.3),
+                'size': random.randint(1, 3),
+                'life': random.randint(15, 25),
+                'color': (150, 150, 150)  # Gray smoke
+            })
+        
+        for p in self.hit_particles[:]:
+            p['life'] -= 1
+            if p['life'] <= 0:
+                self.hit_particles.remove(p)
+
+    # Disable shooting methods completely
+    # def should_shoot(self, player=None):
+    #     return False  # Never shoots
+        
+    # def shoot(self):
+    #     return None  # No bullets
+
+    def should_shoot(self, player=None):
+        # Shoot when cooldown reaches 0 and is on screen
+        return (self.shoot_cooldown <= 0 and 
+                self.x > 0 and self.x < WIDTH)  # Only shoot when visible
+    
+    def shoot(self):
+        self.shoot_cooldown = random.randint(60, 120)  # Reset cooldown
+        if has_sound:
+            shoot_sound.play()
+        
+        # Create bullet moving right (positive speed)
+        bullet = Bullet(self.x + self.rect.width, self.y + self.rect.height//2, False, damage=10)
+        bullet.speed_x = 8  # Faster bullets since enemy is moving right
+        bullet.speed_y = 0
+        # Ensure bullet image faces right
+        bullet.img = pygame.transform.flip(bullet_img, True, False)
+        return bullet
+
+    def create_death_particles(self):
+        for _ in range(20):  # Bigger explosion than Enemy1
+            color = random.choice([
+                (200, 100, 255),  # Purple
+                (255, 150, 50),   # Orange
+                (200, 200, 200),  # White
+                (100, 255, 200)   # Teal
+            ])
+            self.death_particles.append({
+                'x': self.rect.centerx,
+                'y': self.rect.centery,
+                'dx': random.uniform(-3, 3),
+                'dy': random.uniform(-3, 3),
+                'size': random.randint(2, 5),
+                'life': random.randint(20, 40),
+                'color': color
+            })
+
+    def draw_particles(self, surface):
+        for p in self.death_particles[:]:
+            pygame.draw.circle(surface, p['color'],
+                             (int(p['x']), int(p['y'])),
+                             p['size'])
+            p['x'] += p['dx']
+            p['y'] += p['dy']
+            p['life'] -= 1
+            if p['life'] <= 0:
+                self.death_particles.remove(p)
+
+class Bomb:
+    def __init__(self, x, y):
+        self.x = x
+        self.y = y
+        self.img = pygame.transform.rotate(bullet_img, -90)  # Rotate bullet to look like falling bomb
+        self.speed_x = -0.5  # Slight left drift to match plane movement
+        self.speed_y = 4   # Falling speed
+        self.damage = 30   # Heavy damage
+        self.rect = pygame.Rect(x, y, 10, 15)  # Adjusted for rotated image
+        self.rotation_angle = 0  # For falling animation
+        self.rotation_speed = 0  # How fast it spins while falling
+
+    def update(self):
+        self.x += self.speed_x
+        self.y += self.speed_y
+        self.rotation_angle = (self.rotation_angle + self.rotation_speed) % 360
+        self.rect.x = self.x
+        self.rect.y = self.y
+
+    def draw(self):
+        rotated_img = pygame.transform.rotate(self.img, self.rotation_angle)
+        # Center the rotated image
+        rect = rotated_img.get_rect(center=(self.x + self.img.get_width()/2, 
+                                          self.y + self.img.get_height()/2))
+        screen.blit(rotated_img, rect.topleft)
+
+class Enemy7:
+    def __init__(self):
+        self.x = WIDTH
+        self.y = random.randint(50, int(HEIGHT * 0.35))  # Always in top 35% of screen
+        self.img = enemy_img
+        self.speed = 3
+        self.rect = pygame.Rect(self.x, self.y, 50, 30)
+        self.type = 7
+        self.max_health = 20 
+        self.health = self.max_health
+        self.dead = False
+        self.bomb_cooldown = random.randint(30, 60)  # Bombs drop frequently
+        self.bomb_trail = []  # For visual effect
+        self.hit_particles = []
+        self.death_particles = []
+
+    def draw_health_bar(self, surface):
+        if self.health < self.max_health:
+            bar_width = 50
+            bar_height = 5
+            outline_rect = pygame.Rect(self.x, self.y - 10, bar_width, bar_height)
+            fill_rect = pygame.Rect(self.x, self.y - 10, bar_width * (self.health/self.max_health), bar_height)
+            
+            health_pct = self.health / self.max_health
+            if health_pct > 0.6:
+                color = (0, 255, 0)
+            elif health_pct > 0.3:
+                color = (255, 255, 0)
+            else:
+                color = (255, 0, 0)
+                
+            pygame.draw.rect(surface, (40, 40, 40), outline_rect)
+            pygame.draw.rect(surface, color, fill_rect)
+            pygame.draw.rect(surface, (100, 100, 100), outline_rect, 1)
+
+    def draw(self):
+        screen.blit(self.img, (self.x, self.y))
+        self.draw_health_bar(screen)
+        
+        # Draw bomb trail effect
+        for particle in self.bomb_trail:
+            pygame.draw.circle(screen, (255, 100, 0), 
+                             (int(particle['x']), int(particle['y'])), 
+                             particle['size'])
+
+    def update(self):
+        self.x -= self.speed
+        self.rect.x = self.x
+        
+        # Update bomb cooldown
+        if self.bomb_cooldown > 0:
+            self.bomb_cooldown -= 1
+        
+        # Update bomb trail particles
+        for particle in self.bomb_trail[:]:
+            particle['x'] += particle['dx']
+            particle['y'] += particle['dy']
+            particle['life'] -= 1
+            if particle['life'] <= 0:
+                self.bomb_trail.remove(particle)
+
+    def should_drop_bomb(self):
+        return (self.bomb_cooldown <= 0 and 
+                self.x < WIDTH - 50 and 
+                self.x > 50)  # Don't drop bombs near edges
+
+    def drop_bomb(self):
+        self.bomb_cooldown = random.randint(30, 60)
+        
+        # Create bomb trail effect
+        for _ in range(5):
+            self.bomb_trail.append({
+                'x': self.x + random.randint(0, self.rect.width),
+                'y': self.y + self.rect.height,
+                'dx': random.uniform(-0.4, 0.4),
+                'dy': random.uniform(0.4, 1.0),
+                'size': random.randint(1, 3),
+                'life': random.randint(15, 30),
+                'color': (255, random.randint(50, 150), 0)
+            })
+        
+        if has_sound:
+            shoot_sound.play()  # Or use a different bomb-drop sound
+        
+        return Bomb(self.x + self.rect.width//2, self.y + self.rect.height)
+
+    def create_death_particles(self):
+        for _ in range(15):  # Big explosion
+            color = random.choice([
+                (255, 100, 0),  # Orange
+                (255, 200, 0),  # Yellow
+                (150, 75, 0),   # Brown
+                (255, 50, 0)    # Red-orange
+            ])
+            self.death_particles.append({
+                'x': self.rect.centerx,
+                'y': self.rect.centery,
+                'dx': random.uniform(-2, 2),
+                'dy': random.uniform(-2, 2),
+                'size': random.randint(2, 4),
+                'life': random.randint(20, 40),
+                'color': color
+            })
+
+    def draw_particles(self, surface):
+        for p in self.death_particles[:]:
+            pygame.draw.circle(surface, p['color'],
+                             (int(p['x']), int(p['y'])),
+                             p['size'])
+            p['x'] += p['dx']
+            p['y'] += p['dy']
+            p['life'] -= 1
+            if p['life'] <= 0:
+                self.death_particles.remove(p)
+
 # Game setup
 player = Player()
 enemies = []
 enemy_bullets = []
 enemy_spawn_timer = 0
 score = 0
+planes_destroyed = 0
 clock = pygame.time.Clock()
 font = pygame.font.SysFont(None, 36)
 
@@ -1322,7 +1664,7 @@ def show_start_screen():
 show_start_screen()
 
 def check_collisions():
-    global score, global_particles
+    global score, global_particles, planes_destroyed
 
     # Player bullets hit enemies
     for bullet in player.bullets[:]:
@@ -1336,6 +1678,7 @@ def check_collisions():
                     player.bullets.remove(bullet)
                     enemies.remove(enemy)
                     score += 1 * enemy.max_health  # More points for tougher enemies
+                    planes_destroyed += 1
                     if has_sound:
                         explosion_sound.play()
                 else:
@@ -1365,21 +1708,6 @@ def check_collisions():
                 if has_sound:
                     explosion_sound.play()
             break
-
-# def game_over():
-#     global game_over_triggered, running
-#     if game_over_triggered:
-#         return
-#     game_over_triggered = True
-#     text = font.render(f"GAME OVER - Score: {score}", True, WHITE)
-#     screen.blit(text, (WIDTH//2 - 150, HEIGHT//2))
-#     pygame.display.flip()
-#     pygame.time.wait(3000)
-#     running = False  # Ensure main loop exits
-#     if has_sound:
-#         pygame.mixer.music.stop()
-#     pygame.quit()
-#     sys.exit()
 
 def draw_shop():
     screen.fill((0, 0, 50))  # Dark blue background
@@ -1432,52 +1760,24 @@ game_state = "running"  # Can be "running", "paused", "shop", "game_over"
 running = True
 game_over = False
 game_over_time = 0
+player.mouse_control = False  # Disable mouse control by default
 clock = pygame.time.Clock()
 
 while running:
-    # # 1. Event Handling
-    # for event in pygame.event.get():
-    #     if event.type == pygame.QUIT:
-    #         running = False
-
-    #     if event.type == pygame.KEYDOWN:
-    #         if event.key == pygame.K_p and not game_over:  # Toggle pause
-    #             paused = not paused
-            
-    #         if paused:  # Only process these when paused
-    #             if event.key == pygame.K_5:  # Enter shop from pause
-    #                 paused = False
-    #                 shop_active = True
-                
-    #             if event.key == pygame.K_p:  # Resume
-    #                 paused = False
-
-    #     if game_over and event.type == pygame.KEYDOWN:
-    #         if event.key == pygame.K_r:    # Press R to restart
-    #             restart_game()
-    #         #elif event.key == pygame.K_s:
-    #         #    shop_active = True
-    #         elif event.key == pygame.K_ESCAPE:  # Press ESC to quit
-    #             running = False
-
-    #     if shop_active and event.type == pygame.KEYDOWN:
-    #         if event.key == pygame.K_1 and score >= player.upgrade_cost_health:
-    #             player.max_health += 1
-    #             player.health = player.max_health  # Refill health
-    #             score -= player.upgrade_cost_health
-    #             player.upgrade_cost_health += 50  # Increase cost for next purchase
-            
-    #         elif event.key == pygame.K_2 and score >= player.upgrade_cost_firerate:
-    #             player.shoot_delay = max(5, player.shoot_delay - 3)  # Faster firing (min delay = 5)
-    #             score -= player.upgrade_cost_firerate
-    #             player.upgrade_cost_firerate += 75
-            
-    #         elif event.key == pygame.K_3:
-    #             shop_active = False  # Exit shop
-
+    # Getting mouse position
+    mouse_pos = pygame.mouse.get_pos()
+    # 1. Event handling
     for event in pygame.event.get():
         if event.type == pygame.QUIT:
             running = False
+
+            # Mouse button events
+        if event.type == pygame.MOUSEBUTTONDOWN and player.mouse_control:
+            if event.button == 1:  # Left mouse button
+                player.mouse_button_down = True
+        elif event.type == pygame.MOUSEBUTTONUP and player.mouse_control:
+            if event.button == 1:  # Left mouse button
+                player.mouse_button_down = False
         
         if event.type == pygame.KEYDOWN:
             # Global controls (work in any state)
@@ -1487,6 +1787,12 @@ while running:
                 else:
                     running = False
             
+            if event.key == pygame.K_m:
+                player.mouse_control = not player.mouse_control
+                if not player.mouse_control:
+                    # When switching to keyboard, gently center the plane
+                    player.vel_y = (HEIGHT//2 - player.y) * 0.05
+
             # State-specific controls
             if game_state == "running":
                 if event.key == pygame.K_p:
@@ -1518,20 +1824,18 @@ while running:
                 elif event.key == pygame.K_ESCAPE:
                     running = False
 
+
     # 2. Get Input
     keys = pygame.key.get_pressed()
-
-    #if not game_over and not shop_active:  # Pause gameplay when shopping
-    #    player.update(keys)
     
     # 3. Update Game State
     if game_state == "running" and not player.dead:
-        player.update(keys)
+        player.update(keys, mouse_pos)
         
         # Spawn enemies
         enemy_spawn_timer += 1
         if enemy_spawn_timer > 120:
-            enemy_type = random.choices([1, 2, 3, 4, 5], weights=[20, 30, 20, 10, 10], k=1)[0]
+            enemy_type = random.choices([1, 2, 3, 4, 5, 6, 7], weights=[20, 30, 20, 10, 10, 7, 7], k=1)[0]
             if enemy_type == 1:
                 enemies.append(Enemy1())
             elif enemy_type == 2:
@@ -1540,8 +1844,12 @@ while running:
                 enemies.append(Enemy3())
             elif enemy_type == 4:
                 enemies.append(Enemy4())
-            else:
+            elif enemy_type == 5:
                 enemies.append(Enemy5())
+            elif enemy_type == 6:
+                enemies.append(Enemy6())
+            else:
+                enemies.append(Enemy7())
             enemy_spawn_timer = 0
 
         # Update player bullets
@@ -1553,13 +1861,25 @@ while running:
         # Update enemies
         for enemy in enemies[:]:
             enemy.update()
-            if enemy.x < -40:
+            if (enemy.x < -100) or (enemy.x > WIDTH + 100):
                 enemies.remove(enemy)
                 continue
             if not enemy.dead:
                 if enemy.type == 4:
                     if enemy.should_shoot(player):
                         enemy_bullets.append(enemy.shoot(player.x, player.y))
+                
+                elif enemy.type == 6:  # Right-moving Enemy6
+                    if enemy.should_shoot():
+                        bullet = enemy.shoot()
+                        if bullet:  # Ensure we got a bullet
+                            enemy_bullets.append(bullet)
+
+                elif enemy.type == 7:  # Bomber
+                    if enemy.should_drop_bomb():
+                        bomb = enemy.drop_bomb()
+                        enemy_bullets.append(bomb)  # We reuse enemy_bullets for bombs
+
                 else:
                     if enemy.should_shoot():
                         enemy_bullets.append(enemy.shoot())
@@ -1630,8 +1950,22 @@ while running:
     # Draw UI
     health_text = font.render(f"Health: {player.health}/{player.max_health}", True, WHITE)
     score_text = font.render(f"Score: {score}", True, WHITE)
+    planes_destroyed_text = font.render(f"Planes destroyed: {planes_destroyed}", True, WHITE)
     screen.blit(health_text, (10, 10))
     screen.blit(score_text, (10, 50))
+    screen.blit(planes_destroyed_text, (10, 90))
+
+    # Draw control scheme indicator
+    control_text = font.render("Controls: MOUSE" if player.mouse_control else "Controls: KEYBOARD", 
+                            True, (200, 200, 255))
+    screen.blit(control_text, (WIDTH - control_text.get_width() - 10, 10))
+    # Draw toggle hint
+    hint_text = font.render("Press M to toggle controls", True, (200, 200, 200))
+    screen.blit(hint_text, (WIDTH - hint_text.get_width() - 10, 40))
+
+    # Add new pause/shop hint below (with 10px spacing)
+    pause_hint = font.render("Press P to Pause/Shop", True, (200, 200, 200))
+    screen.blit(pause_hint, (WIDTH - pause_hint.get_width() - 10, 70))  # 40 + 30 (hint height + spacing)
 
     # Draw state overlays
     if game_state == "paused":
@@ -1667,7 +2001,8 @@ while running:
         # Show game over text
         texts = [
             font.render("GAME OVER", True, WHITE),
-            font.render(f"Final Score: {score}", True, WHITE),
+            font.render(f"Score: {score}", True, WHITE),
+            font.render(f"Planes destroyed: {planes_destroyed}", True, WHITE),
             font.render("Press R to restart", True, WHITE),
             font.render("Press ESC to quit", True, WHITE),
             #font.render("Press S to open shop", True, WHITE) if not shop_active else font.render("Press S to close shop", True, WHITE)
