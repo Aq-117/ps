@@ -1,6 +1,4 @@
-# added mouse control for movement and shooting
-# added enemy6(left to right), enemy7(bomber)
-# added planes_destroyed counter
+#tried inheritance but it didn't work
 import pygame
 import random
 import sys
@@ -538,412 +536,6 @@ class Bullet:
         else:
             pygame.draw.rect(screen, (0, 255, 0), (self.x, self.y, 10, 5))
 
-# Enemy Type 1: Original behavior (moves left across screen)
-class Enemy1:
-    def __init__(self):
-        self.x = WIDTH
-        self.y = random.randint(50, HEIGHT - 50)
-        self.img = enemy_img
-        self.speed = 2
-        self.shoot_cooldown = random.randint(30, 90) #earlier 30, 90
-        self.rect = pygame.Rect(self.x, self.y, 40, 24)
-        self.type = 1  # Add enemy type identifier
-        self.death_particles = []
-        self.max_health = 10
-        self.health = self.max_health
-        self.dead = False  # <-- Add this line
-        self.hit_particles = []
-        
-    def draw_health_bar(self, surface):
-        if self.health < self.max_health:  # Only show if damaged
-            bar_width = 40
-            bar_height = 4
-            outline_rect = pygame.Rect(self.x, self.y - 8, bar_width, bar_height)
-            fill_rect = pygame.Rect(self.x, self.y - 8, bar_width * (self.health/self.max_health), bar_height)
-            
-            # Color based on health percentage
-            health_pct = self.health / self.max_health
-            if health_pct > 0.6:
-                color = (0, 255, 0)  # Green
-            elif health_pct > 0.3:
-                color = (255, 255, 0)  # Yellow
-            else:
-                color = (255, 0, 0)  # Red
-                
-            pygame.draw.rect(surface, (40, 40, 40), outline_rect)  # Background
-            pygame.draw.rect(surface, color, fill_rect)  # Health
-            pygame.draw.rect(surface, (100, 100, 100), outline_rect, 1)  # Border
-
-    def draw(self):
-        if self.img:
-            screen.blit(self.img, (self.x, self.y))
-        else:
-            pygame.draw.polygon(screen, (255, 50, 50),
-                               [(self.x, self.y+15), 
-                                (self.x+40, self.y), 
-                                (self.x+40, self.y+30)])
-        self.draw_health_bar(screen)
-        if self.health < self.max_health:
-            damage_pct = 1 - (self.health / self.max_health)
-            if damage_pct > 0.5:  # More than 50% damaged
-                # Add smoke effect
-                for _ in range(int(2 * damage_pct)):
-                    smoke_pos = (
-                        self.x + random.randint(0, self.rect.width),
-                        self.y + random.randint(0, self.rect.height)
-                    )
-                    pygame.draw.circle(screen, 
-                                    (random.randint(80, 120), random.randint(80, 120), random.randint(80, 120)),
-                                    smoke_pos, random.randint(1, 3))
-                    
-        for p in self.hit_particles:
-            pygame.draw.circle(screen, p['color'],  # Use global 'screen'
-                            (int(p['x']), int(p['y'])), 
-                            p['size'])
-
-        # Draw hit particles (using global screen)
-        for p in self.hit_particles:
-            pygame.draw.circle(screen, p['color'],  # Use global 'screen'
-                            (int(p['x']), int(p['y'])), 
-                            p['size'])
-
-    def update(self):
-        self.x -= self.speed
-        self.rect.x = self.x
-        self.shoot_cooldown -= 1
-
-        # Add smoke particles when health is low (≤50% health)
-        if self.health <= self.max_health * 0.5 and not self.dead and random.random() < 0.2:
-            self.hit_particles.append({
-                'x': self.rect.centerx - 10,
-                'y': self.rect.centery,
-                'dx': random.uniform(-1, -0.5),  # Smoke drifts left
-                'dy': random.uniform(-1, -0.3),
-                'size': random.randint(2, 4),
-                'life': random.randint(20, 40),
-                'color': (random.randint(50, 100), random.randint(50, 100), random.randint(50, 100))
-            })
-        
-        # Update existing particles
-        for p in self.hit_particles[:]:
-            p['life'] -= 1
-            if p['life'] <= 0:
-                self.hit_particles.remove(p)
-        
-        
-    def should_shoot(self, player=None):
-        return self.shoot_cooldown <= 0
-        
-    def shoot(self):
-        self.shoot_cooldown = random.randint(70, 120)
-        if has_sound:
-            shoot_sound.play()
-        return Bullet(self.x, self.y + 15, False, damage=15)
-
-    def create_death_particles(self):
-        for _ in range(15):
-            color = random.choice([
-                (255, 255, 100),   # yellow spark
-                (255, 200, 50),    # orange spark
-                (200, 200, 200),   # light gray (smoke)
-                (120, 120, 120),   # dark gray (smoke)
-                (255, 255, 255),   # white flash
-                (100, 180, 255),   # blue spark
-            ])
-            self.death_particles.append({
-                'x': self.rect.centerx,
-                'y': self.rect.centery,
-                'dx': random.uniform(-2, 2),
-                'dy': random.uniform(-2, 2),
-                'size': random.randint(1, 4),
-                'life': random.randint(15, 30),
-                'color': color
-            })
-
-    def draw_particles(self, surface):
-        for p in self.death_particles[:]:
-            pygame.draw.circle(surface, p['color'],
-                             (int(p['x']), int(p['y'])),
-                             p['size'])
-            p['x'] += p['dx']
-            p['y'] += p['dy']
-            p['life'] -= 1
-            if p['life'] <= 0:
-                self.death_particles.remove(p)
-
-# Enemy Type 2: Stops at 20% of screen and stays still
-class Enemy2:
-    def __init__(self):
-        self.stop_x = WIDTH * 0.8  # 20% from right
-        self.x = WIDTH
-        self.y = random.randint(50, HEIGHT - 50)
-        self.img = enemy_img
-        self.speed = 3
-        self.shoot_cooldown = random.randint(30, 90) #30, 90
-        self.rect = pygame.Rect(self.x, self.y, 40, 24)
-        self.type = 2
-        self.has_stopped = False
-        self.death_particles = []
-        self.max_health = 20
-        self.health = self.max_health
-        self.dead = False  # <-- Add this line
-        self.hit_particles = []
-        
-    def draw_health_bar(self, surface):
-        if self.health < self.max_health:  # Only show if damaged
-            bar_width = 40
-            bar_height = 4
-            outline_rect = pygame.Rect(self.x, self.y - 8, bar_width, bar_height)
-            fill_rect = pygame.Rect(self.x, self.y - 8, bar_width * (self.health/self.max_health), bar_height)
-            
-            # Color based on health percentage
-            health_pct = self.health / self.max_health
-            if health_pct > 0.6:
-                color = (0, 255, 0)  # Green
-            elif health_pct > 0.3:
-                color = (255, 255, 0)  # Yellow
-            else:
-                color = (255, 0, 0)  # Red
-                
-            pygame.draw.rect(surface, (40, 40, 40), outline_rect)  # Background
-            pygame.draw.rect(surface, color, fill_rect)  # Health
-            pygame.draw.rect(surface, (100, 100, 100), outline_rect, 1)  # Border
-
-    def draw(self):
-        if self.img:
-            screen.blit(self.img, (self.x, self.y))
-        else:
-            pygame.draw.polygon(screen, (255, 100, 100),  # Different color for visibility
-                               [(self.x, self.y+15), 
-                                (self.x+40, self.y), 
-                                (self.x+40, self.y+30)])
-        self.draw_health_bar(screen)
-        if self.health < self.max_health:
-            damage_pct = 1 - (self.health / self.max_health)
-            if damage_pct > 0.5:  # More than 50% damaged
-                # Add smoke effect
-                for _ in range(int(2 * damage_pct)):
-                    smoke_pos = (
-                        self.x + random.randint(0, self.rect.width),
-                        self.y + random.randint(0, self.rect.height)
-                    )
-                    pygame.draw.circle(screen, 
-                                    (random.randint(80, 120), random.randint(80, 120), random.randint(80, 120)),
-                                    smoke_pos, random.randint(1, 3))
-
-        # Draw hit particles (using global screen)
-        for p in self.hit_particles:
-            pygame.draw.circle(screen, p['color'],  # Use global 'screen'
-                            (int(p['x']), int(p['y'])), 
-                            p['size'])
-
-    def update(self):
-        if not self.has_stopped:
-            self.x -= self.speed
-            if self.x <= self.stop_x:
-                self.has_stopped = True
-            self.rect.x = self.x
-        
-        self.shoot_cooldown -= 1
-
-        # Add smoke particles when health is low (≤50% health)
-        if self.health <= self.max_health * 0.5 and not self.dead and random.random() < 0.2:
-            self.hit_particles.append({
-                'x': self.rect.centerx - 10,
-                'y': self.rect.centery,
-                'dx': random.uniform(-1, -0.5),  # Smoke drifts left
-                'dy': random.uniform(-1, -0.3),
-                'size': random.randint(2, 4),
-                'life': random.randint(20, 40),
-                'color': (random.randint(50, 100), random.randint(50, 100), random.randint(50, 100))
-            })
-        
-        # Update existing particles
-        for p in self.hit_particles[:]:
-            p['life'] -= 1
-            if p['life'] <= 0:
-                self.hit_particles.remove(p)
-        
-    def should_shoot(self, player=None):
-        return self.shoot_cooldown <= 0
-        
-    def shoot(self):
-        self.shoot_cooldown = random.randint(50, 90)  #  20, 60 Faster shooting than type 1
-        if has_sound:
-            shoot_sound.play()
-        return Bullet(self.x, self.y + 15, False, damage = 10)
-
-    def create_death_particles(self):
-        for _ in range(15):
-            color = random.choice([
-                (255, 255, 100),   # yellow spark
-                (255, 200, 50),    # orange spark
-                (200, 200, 200),   # light gray (smoke)
-                (120, 120, 120),   # dark gray (smoke)
-                (255, 255, 255),   # white flash
-                (100, 180, 255),   # blue spark
-            ])
-            self.death_particles.append({
-                'x': self.rect.centerx,
-                'y': self.rect.centery,
-                'dx': random.uniform(-2, 2),
-                'dy': random.uniform(-2, 2),
-                'size': random.randint(1, 4),
-                'life': random.randint(15, 30),
-                'color': color
-            })
-
-    def draw_particles(self, surface):
-        for p in self.death_particles[:]:
-            pygame.draw.circle(surface, p['color'],
-                             (int(p['x']), int(p['y'])),
-                             p['size'])
-            p['x'] += p['dx']
-            p['y'] += p['dy']
-            p['life'] -= 1
-            if p['life'] <= 0:
-                self.death_particles.remove(p)
-
-# Enemy Type 3: Stops at 20% of screen then moves vertically
-class Enemy3:
-    def __init__(self):
-        self.stop_x = WIDTH * 0.7  # 30% from right
-        self.x = WIDTH
-        self.y = random.randint(50, HEIGHT - 50)
-        self.img = enemy_img
-        self.speed = 3
-        self.vertical_speed = 1.5
-        self.direction = 1  # 1 for down, -1 for up
-        self.shoot_cooldown = random.randint(60, 100)
-        self.rect = pygame.Rect(self.x, self.y, 40, 24)
-        self.type = 3
-        self.has_stopped = False
-        self.death_particles = []
-        self.max_health = 20
-        self.health = self.max_health
-        self.dead = False  # <-- Add this line
-        self.hit_particles = []
-        
-    def draw_health_bar(self, surface):
-        if self.health < self.max_health:  # Only show if damaged
-            bar_width = 40
-            bar_height = 4
-            outline_rect = pygame.Rect(self.x, self.y - 8, bar_width, bar_height)
-            fill_rect = pygame.Rect(self.x, self.y - 8, bar_width * (self.health/self.max_health), bar_height)
-            
-            # Color based on health percentage
-            health_pct = self.health / self.max_health
-            if health_pct > 0.6:
-                color = (0, 255, 0)  # Green
-            elif health_pct > 0.3:
-                color = (255, 255, 0)  # Yellow
-            else:
-                color = (255, 0, 0)  # Red
-                
-            pygame.draw.rect(surface, (40, 40, 40), outline_rect)  # Background
-            pygame.draw.rect(surface, color, fill_rect)  # Health
-            pygame.draw.rect(surface, (100, 100, 100), outline_rect, 1)  # Border
-
-    def draw(self):
-        if self.img:
-            screen.blit(self.img, (self.x, self.y))
-        else:
-            pygame.draw.polygon(screen, (255, 150, 150),  # Different color for visibility
-                               [(self.x, self.y+15), 
-                                (self.x+40, self.y), 
-                                (self.x+40, self.y+30)])
-        self.draw_health_bar(screen)
-        if self.health < self.max_health:
-            damage_pct = 1 - (self.health / self.max_health)
-            if damage_pct > 0.5:  # More than 50% damaged
-                # Add smoke effect
-                for _ in range(int(2 * damage_pct)):
-                    smoke_pos = (
-                        self.x + random.randint(0, self.rect.width),
-                        self.y + random.randint(0, self.rect.height)
-                    )
-                    pygame.draw.circle(screen, 
-                                    (random.randint(80, 120), random.randint(80, 120), random.randint(80, 120)),
-                                    smoke_pos, random.randint(1, 3))
-        
-        # Draw hit particles (using global screen)
-        for p in self.hit_particles:
-            pygame.draw.circle(screen, p['color'],  # Use global 'screen'
-                            (int(p['x']), int(p['y'])), 
-                            p['size'])
-
-    def update(self):
-        if not self.has_stopped:
-            self.x -= self.speed
-            if self.x <= self.stop_x:
-                self.has_stopped = True
-            self.rect.x = self.x
-        else:
-            # Move vertically and change direction at screen edges
-            self.y += self.vertical_speed * self.direction
-            if self.y <= 0 or self.y >= HEIGHT - 30:
-                self.direction *= -1
-            self.rect.y = self.y
-        
-        self.shoot_cooldown -= 1
-
-        # Add smoke particles when health is low (≤50% health)
-        if self.health <= self.max_health * 0.5 and not self.dead and random.random() < 0.2:
-            self.hit_particles.append({
-                'x': self.rect.centerx - 10,
-                'y': self.rect.centery,
-                'dx': random.uniform(-1, -0.5),  # Smoke drifts left
-                'dy': random.uniform(-1, -0.3),
-                'size': random.randint(2, 4),
-                'life': random.randint(20, 40),
-                'color': (random.randint(50, 100), random.randint(50, 100), random.randint(50, 100))
-            })
-        
-        # Update existing particles
-        for p in self.hit_particles[:]:
-            p['life'] -= 1
-            if p['life'] <= 0:
-                self.hit_particles.remove(p)
-        
-    def should_shoot(self, player=None):
-        return self.shoot_cooldown <= 0
-        
-    def shoot(self):
-        self.shoot_cooldown = random.randint(50, 100)  # Different shooting pattern
-        if has_sound:
-            shoot_sound.play()
-        return Bullet(self.x, self.y + 15, False, damage=10)
-    
-    def create_death_particles(self):
-        for _ in range(15):
-            color = random.choice([
-                (255, 255, 100),   # yellow spark
-                (255, 200, 50),    # orange spark
-                (200, 200, 200),   # light gray (smoke)
-                (120, 120, 120),   # dark gray (smoke)
-                (255, 255, 255),   # white flash
-                (100, 180, 255),   # blue spark
-            ])
-            self.death_particles.append({
-                'x': self.rect.centerx,
-                'y': self.rect.centery,
-                'dx': random.uniform(-2, 2),
-                'dy': random.uniform(-2, 2),
-                'size': random.randint(1, 4),
-                'life': random.randint(15, 30),
-                'color': color
-            })
-
-    def draw_particles(self, surface):
-        for p in self.death_particles[:]:
-            pygame.draw.circle(surface, p['color'],
-                             (int(p['x']), int(p['y'])),
-                             p['size'])
-            p['x'] += p['dx']
-            p['y'] += p['dy']
-            p['life'] -= 1
-            if p['life'] <= 0:
-                self.death_particles.remove(p)
 
 class HomingMissile:
     def __init__(self, x, y, target_x, target_y):
@@ -1003,453 +595,6 @@ class HomingMissile:
         else:
             pygame.draw.rect(screen, (255, 0, 0), (self.x, self.y, 10, 5))
 
-class Enemy4:
-    def __init__(self):
-        self.stop_x = WIDTH * 0.9  # 10% from right
-        self.x = WIDTH
-        self.y = random.randint(50, HEIGHT - 50)
-        self.img = enemy_img
-        self.speed = 3
-        self.shoot_cooldown = 210  # 3.5 seconds at 60 FPS (60*3.5)
-        self.initial_delay = True
-        self.rect = pygame.Rect(self.x, self.y, 50, 30)
-        self.type = 4
-        self.death_particles = []
-        self.max_health = 20
-        self.health = self.max_health
-        self.dead = False  # <-- Add this line
-        self.hit_particles = []
-        
-    def draw_health_bar(self, surface):
-        if self.health < self.max_health:  # Only show if damaged
-            bar_width = 40
-            bar_height = 4
-            outline_rect = pygame.Rect(self.x, self.y - 8, bar_width, bar_height)
-            fill_rect = pygame.Rect(self.x, self.y - 8, bar_width * (self.health/self.max_health), bar_height)
-            
-            # Color based on health percentage
-            health_pct = self.health / self.max_health
-            if health_pct > 0.6:
-                color = (0, 255, 0)  # Green
-            elif health_pct > 0.3:
-                color = (255, 255, 0)  # Yellow
-            else:
-                color = (255, 0, 0)  # Red
-                
-            pygame.draw.rect(surface, (40, 40, 40), outline_rect)  # Background
-            pygame.draw.rect(surface, color, fill_rect)  # Health
-            pygame.draw.rect(surface, (100, 100, 100), outline_rect, 1)  # Border    
-
-    def draw(self):
-        if self.img:
-            screen.blit(self.img, (self.x, self.y))
-        else:
-            pygame.draw.polygon(screen, (255, 200, 200),  # Different color
-                               [(self.x, self.y+15), 
-                                (self.x+40, self.y), 
-                                (self.x+40, self.y+30)])
-        self.draw_health_bar(screen)
-        if self.health < self.max_health:
-            damage_pct = 1 - (self.health / self.max_health)
-            if damage_pct > 0.5:  # More than 50% damaged
-                # Add smoke effect
-                for _ in range(int(2 * damage_pct)):
-                    smoke_pos = (
-                        self.x + random.randint(0, self.rect.width),
-                        self.y + random.randint(0, self.rect.height)
-                    )
-                    pygame.draw.circle(screen, 
-                                    (random.randint(80, 120), random.randint(80, 120), random.randint(80, 120)),
-                                    smoke_pos, random.randint(1, 3))
-                    
-        # Draw hit particles (using global screen)
-        for p in self.hit_particles:
-            pygame.draw.circle(screen, p['color'],  # Use global 'screen'
-                            (int(p['x']), int(p['y'])), 
-                            p['size'])
-                
-    def update(self):
-        if self.x > self.stop_x:
-            self.x -= self.speed
-            self.rect.x = self.x
-        
-        if self.shoot_cooldown > 0:
-            self.shoot_cooldown -= 1
-
-        # Add smoke particles when health is low (≤50% health)
-        if self.health <= self.max_health * 0.5 and not self.dead and random.random() < 0.2:
-            self.hit_particles.append({
-                'x': self.rect.centerx - 10,
-                'y': self.rect.centery,
-                'dx': random.uniform(-1, -0.5),  # Smoke drifts left
-                'dy': random.uniform(-1, -0.3),
-                'size': random.randint(2, 4),
-                'life': random.randint(20, 40),
-                'color': (random.randint(50, 100), random.randint(50, 100), random.randint(50, 100))
-            })
-        
-        # Update existing particles
-        for p in self.hit_particles[:]:
-            p['life'] -= 1
-            if p['life'] <= 0:
-                self.hit_particles.remove(p)
-        
-    def should_shoot(self, player):
-        # Only shoot if cooldown is 0 and we're in position
-        return (self.shoot_cooldown <= 0 and 
-                self.x <= self.stop_x and
-                abs(player.y - self.y) < HEIGHT/2)  # Only shoot if player is roughly aligned
-        
-    def shoot(self, player_x, player_y):
-        self.shoot_cooldown = 240  # 4 second cooldown (60*4)
-        if has_sound:
-            shoot_sound.play()
-            missile = HomingMissile(self.x, self.y + 15, player_x, player_y)
-            missile.damage = 20
-        return missile
-    
-    def create_death_particles(self):
-        for _ in range(15):
-            color = random.choice([
-                (255, 255, 100),   # yellow spark
-                (255, 200, 50),    # orange spark
-                (200, 200, 200),   # light gray (smoke)
-                (120, 120, 120),   # dark gray (smoke)
-                (255, 255, 255),   # white flash
-                (100, 180, 255),   # blue spark
-            ])
-            self.death_particles.append({
-                'x': self.rect.centerx,
-                'y': self.rect.centery,
-                'dx': random.uniform(-2, 2),
-                'dy': random.uniform(-2, 2),
-                'size': random.randint(1, 4),
-                'life': random.randint(15, 30),
-                'color': color
-            })
-
-    def draw_particles(self, surface):
-        for p in self.death_particles[:]:
-            pygame.draw.circle(surface, p['color'],
-                             (int(p['x']), int(p['y'])),
-                             p['size'])
-            p['x'] += p['dx']
-            p['y'] += p['dy']
-            p['life'] -= 1
-            if p['life'] <= 0:
-                self.death_particles.remove(p)
-
-class Enemy5:
-    def __init__(self):
-        self.x = WIDTH
-        self.y = random.randint(int(HEIGHT * 0.2), int(HEIGHT * 0.7))  # Starts between 20%-70% of screen
-        self.img = enemy_img
-        self.base_speed = 4  # Faster than Enemy1 (speed 3)
-        self.current_speed = self.base_speed
-        self.speed_x = -self.base_speed  # Always moving left
-        self.speed_y = 0
-        self.angle = 0  # Current movement angle (degrees)
-        self.target_angle = 0
-        self.angle_change_timer = 0
-        self.angle_change_delay = random.randint(120, 210)  # 2-3.5 seconds at 60 FPS
-        self.shoot_cooldown = random.randint(30, 90)
-        self.rect = pygame.Rect(self.x, self.y, 50, 30)
-        self.type = 5
-        self.dead = False
-        self.set_new_angle()  # Initialize first angle
-        self.max_health = 10
-        self.health = self.max_health
-        self.death_particles = []
-
-    def draw_health_bar(self, surface):
-        if self.health < self.max_health:  # Only show if damaged
-            bar_width = 40
-            bar_height = 4
-            outline_rect = pygame.Rect(self.x, self.y - 8, bar_width, bar_height)
-            fill_rect = pygame.Rect(self.x, self.y - 8, bar_width * (self.health/self.max_health), bar_height)
-            
-            # Color based on health percentage
-            health_pct = self.health / self.max_health
-            if health_pct > 0.6:
-                color = (0, 255, 0)  # Green
-            elif health_pct > 0.3:
-                color = (255, 255, 0)  # Yellow
-            else:
-                color = (255, 0, 0)  # Red
-                
-            pygame.draw.rect(surface, (40, 40, 40), outline_rect)  # Background
-            pygame.draw.rect(surface, color, fill_rect)  # Health
-            pygame.draw.rect(surface, (100, 100, 100), outline_rect, 1)  # Border
-
-    def set_new_angle(self):
-        # Calculate new angle (limited to prevent too steep angles)
-        min_angle = -25  # Degrees (upward)
-        max_angle = 25   # Degrees (downward)
-        
-        # Adjust if near boundaries
-        if self.y < HEIGHT * 0.3:  # Too high
-            self.target_angle = random.randint(0, max_angle)
-        elif self.y > HEIGHT * 0.7:  # Too low
-            self.target_angle = random.randint(min_angle, 0)
-        else:
-            self.target_angle = random.randint(min_angle, max_angle)
-        
-        self.angle_change_timer = 0
-
-    def update(self):
-        # Update angle change timer
-        self.angle_change_timer += 1
-        if self.angle_change_timer >= self.angle_change_delay:
-            self.set_new_angle()
-            self.angle_change_delay = random.randint(180, 240)  # New 3-4 second delay
-
-        # Smoothly transition to target angle
-        angle_diff = self.target_angle - self.angle
-        if abs(angle_diff) > 0.5:  # If significant difference remains
-            self.angle += angle_diff * 0.05  # 5% of difference each frame
-            # Reduce speed while turning (for smoothness)
-            self.current_speed = self.base_speed * 0.8
-        else:
-            self.current_speed = self.base_speed
-
-        # Convert angle to movement
-        rad_angle = math.radians(self.angle)
-        self.speed_x = -self.current_speed * math.cos(rad_angle)
-        self.speed_y = self.current_speed * math.sin(rad_angle)
-
-        # Update position
-        self.x += self.speed_x
-        self.y += self.speed_y
-
-        # Enforce vertical boundaries
-        if self.y < HEIGHT * 0.2:
-            self.y = HEIGHT * 0.2
-            self.set_new_angle()
-        elif self.y > HEIGHT * 0.8:
-            self.y = HEIGHT * 0.8
-            self.set_new_angle()
-
-        self.rect.x = self.x
-        self.rect.y = self.y
-        
-        if self.shoot_cooldown > 0:
-            self.shoot_cooldown -= 1
-
-    def draw(self):
-        if self.img:
-            # Rotate image to face movement direction
-            rotated_img = pygame.transform.rotate(self.img, -self.angle)
-            # Get the rect of the rotated image
-            rotated_rect = rotated_img.get_rect()
-            # Set the center position to match the enemy's position
-            rotated_rect.center = (self.x + self.img.get_width() // 2, 
-                                self.y + self.img.get_height() // 2)
-            # Draw the rotated image
-            screen.blit(rotated_img, rotated_rect)
-        else:
-            # Fallback drawing
-            pygame.draw.polygon(screen, (200, 50, 200),  # Different color
-                            [(self.x, self.y+15), 
-                                (self.x+40, self.y), 
-                                (self.x+40, self.y+30)])
-        self.draw_health_bar(screen)
-        if self.health < self.max_health:
-            damage_pct = 1 - (self.health / self.max_health)
-            if damage_pct > 0.5:  # More than 50% damaged
-                # Add smoke effect
-                for _ in range(int(2 * damage_pct)):
-                    smoke_pos = (
-                        self.x + random.randint(0, self.rect.width),
-                        self.y + random.randint(0, self.rect.height)
-                    )
-                    pygame.draw.circle(screen, 
-                                    (random.randint(80, 120), random.randint(80, 120), random.randint(80, 120)),
-                                    smoke_pos, random.randint(1, 3))
-
-    def should_shoot(self):
-        return self.shoot_cooldown <= 0
-
-    def shoot(self):
-        self.shoot_cooldown = random.randint(30, 90)
-        if has_sound:
-            shoot_sound.play()
-        
-        # Shoot in direction plane is facing
-        rad_angle = math.radians(self.angle)
-        speed_x = -10 * math.cos(rad_angle)  # Negative for leftward
-        speed_y = 10 * math.sin(rad_angle)
-        
-        # Create directional bullet
-        bullet = Bullet(self.x, self.y + 15, False, damage=20)
-        bullet.speed_x = speed_x
-        bullet.speed_y = speed_y
-        return bullet
-    
-    def create_death_particles(self):
-        for _ in range(15):
-            color = random.choice([
-                (255, 255, 100),   # yellow spark
-                (255, 200, 50),    # orange spark
-                (200, 200, 200),   # light gray (smoke)
-                (120, 120, 120),   # dark gray (smoke)
-                (255, 255, 255),   # white flash
-                (100, 180, 255),   # blue spark
-            ])
-            self.death_particles.append({
-                'x': self.rect.centerx,
-                'y': self.rect.centery,
-                'dx': random.uniform(-2, 2),
-                'dy': random.uniform(-2, 2),
-                'size': random.randint(1, 4),
-                'life': random.randint(15, 30),
-                'color': color
-            })
-
-    def draw_particles(self, surface):
-        for p in self.death_particles[:]:
-            pygame.draw.circle(surface, p['color'],
-                             (int(p['x']), int(p['y'])),
-                             p['size'])
-            p['x'] += p['dx']
-            p['y'] += p['dy']
-            p['life'] -= 1
-            if p['life'] <= 0:
-                self.death_particles.remove(p)
-
-class Enemy6:
-    def __init__(self):
-        self.x = -100  # Start off-screen LEFT (instead of right like others)
-        self.y = random.randint(50, HEIGHT - 50)
-        self.img = enemy_img  # Use your existing enemy image or create a new one
-        self.speed = 3 #random.uniform(3, 4)  # Rightward movement (positive speed)
-        self.rect = pygame.Rect(self.x, self.y, 40, 24)
-        self.type = 6
-        self.death_particles = []
-        self.max_health = 10  # Slightly tougher than Enemy1
-        self.health = self.max_health
-        self.dead = False
-        self.hit_particles = []
-        self.shoot_cooldown = random.randint(60, 120)
-
-    def draw_health_bar(self, surface):
-        if self.health < self.max_health:
-            bar_width = 40
-            bar_height = 4
-            outline_rect = pygame.Rect(self.x, self.y - 8, bar_width, bar_height)
-            fill_rect = pygame.Rect(self.x, self.y - 8, bar_width * (self.health/self.max_health), bar_height)
-            
-            health_pct = self.health / self.max_health
-            if health_pct > 0.6:
-                color = (0, 255, 0)  # Green
-            elif health_pct > 0.3:
-                color = (255, 255, 0)  # Yellow
-            else:
-                color = (255, 0, 0)  # Red
-                
-            pygame.draw.rect(surface, (40, 40, 40), outline_rect)
-            pygame.draw.rect(surface, color, fill_rect)
-            pygame.draw.rect(surface, (100, 100, 100), outline_rect, 1)
-
-    def draw(self):
-        # Flip image horizontally since it's moving rightward
-        flipped_img = pygame.transform.flip(self.img, True, False)
-        screen.blit(flipped_img, (self.x, self.y))
-        
-        self.draw_health_bar(screen)
-        
-        if self.health < self.max_health:
-            damage_pct = 1 - (self.health / self.max_health)
-            if damage_pct > 0.5:
-                for _ in range(int(2 * damage_pct)):
-                    smoke_pos = (
-                        self.x + random.randint(0, self.rect.width),
-                        self.y + random.randint(0, self.rect.height)
-                    )
-                    pygame.draw.circle(screen, 
-                                    (random.randint(80, 120), random.randint(80, 120), random.randint(80, 120)),
-                                    smoke_pos, random.randint(1, 3))
-        
-        for p in self.hit_particles:
-            pygame.draw.circle(screen, p['color'], (int(p['x']), int(p['y'])), p['size'])
-
-    def update(self):
-        self.x += self.speed  # Move RIGHT (positive speed)
-        self.rect.x = self.x
-
-        if self.shoot_cooldown > 0:
-            self.shoot_cooldown -= 1
-
-        # Add smoke trail (different from other enemies)
-        if random.random() < 0.2:
-            self.hit_particles.append({
-                'x': self.rect.left + 5,
-                'y': self.rect.centery,
-                'dx': random.uniform(-1.5, -0.5),  # Drift left
-                'dy': random.uniform(-0.3, 0.3),
-                'size': random.randint(1, 3),
-                'life': random.randint(15, 25),
-                'color': (150, 150, 150)  # Gray smoke
-            })
-        
-        for p in self.hit_particles[:]:
-            p['life'] -= 1
-            if p['life'] <= 0:
-                self.hit_particles.remove(p)
-
-    # Disable shooting methods completely
-    # def should_shoot(self, player=None):
-    #     return False  # Never shoots
-        
-    # def shoot(self):
-    #     return None  # No bullets
-
-    def should_shoot(self, player=None):
-        # Shoot when cooldown reaches 0 and is on screen
-        return (self.shoot_cooldown <= 0 and 
-                self.x > 0 and self.x < WIDTH)  # Only shoot when visible
-    
-    def shoot(self):
-        self.shoot_cooldown = random.randint(60, 120)  # Reset cooldown
-        if has_sound:
-            shoot_sound.play()
-        
-        # Create bullet moving right (positive speed)
-        bullet = Bullet(self.x + self.rect.width, self.y + self.rect.height//2, False, damage=10)
-        bullet.speed_x = 8  # Faster bullets since enemy is moving right
-        bullet.speed_y = 0
-        # Ensure bullet image faces right
-        bullet.img = pygame.transform.flip(bullet_img, True, False)
-        return bullet
-
-    def create_death_particles(self):
-        for _ in range(20):  # Bigger explosion than Enemy1
-            color = random.choice([
-                (200, 100, 255),  # Purple
-                (255, 150, 50),   # Orange
-                (200, 200, 200),  # White
-                (100, 255, 200)   # Teal
-            ])
-            self.death_particles.append({
-                'x': self.rect.centerx,
-                'y': self.rect.centery,
-                'dx': random.uniform(-3, 3),
-                'dy': random.uniform(-3, 3),
-                'size': random.randint(2, 5),
-                'life': random.randint(20, 40),
-                'color': color
-            })
-
-    def draw_particles(self, surface):
-        for p in self.death_particles[:]:
-            pygame.draw.circle(surface, p['color'],
-                             (int(p['x']), int(p['y'])),
-                             p['size'])
-            p['x'] += p['dx']
-            p['y'] += p['dy']
-            p['life'] -= 1
-            if p['life'] <= 0:
-                self.death_particles.remove(p)
-
 class Bomb:
     def __init__(self, x, y):
         self.x = x
@@ -1476,76 +621,331 @@ class Bomb:
                                           self.y + self.img.get_height()/2))
         screen.blit(rotated_img, rect.topleft)
 
-class Enemy7:
-    def __init__(self):
+class Enemy:
+    def __init__(self, enemy_type, max_health, speed, shoot_delay_range, damage, img=None):
+        # Positioning
         self.x = WIDTH
-        self.y = random.randint(50, int(HEIGHT * 0.35))  # Always in top 35% of screen
-        self.img = enemy_img
-        self.speed = 3
+        self.y = random.randint(50, HEIGHT - 50)
+        self.img = img or enemy_img  # Use default enemy_img if none provided
+        
+        # Stats
+        self.type = enemy_type
+        self.max_health = max_health
+        self.health = max_health
+        self.speed = speed
+        self.base_speed = speed
+        self.shoot_delay_range = shoot_delay_range
+        self.shoot_cooldown = random.randint(*shoot_delay_range)
+        self.damage = damage
+        
+        # State
         self.rect = pygame.Rect(self.x, self.y, 50, 30)
-        self.type = 7
-        self.max_health = 20 
-        self.health = self.max_health
         self.dead = False
-        self.bomb_cooldown = random.randint(30, 60)  # Bombs drop frequently
-        self.bomb_trail = []  # For visual effect
-        self.hit_particles = []
         self.death_particles = []
-
+        self.hit_particles = []
+    
+    # === Common Methods ===
     def draw_health_bar(self, surface):
         if self.health < self.max_health:
             bar_width = 50
-            bar_height = 5
-            outline_rect = pygame.Rect(self.x, self.y - 10, bar_width, bar_height)
-            fill_rect = pygame.Rect(self.x, self.y - 10, bar_width * (self.health/self.max_health), bar_height)
-            
             health_pct = self.health / self.max_health
+            outline_rect = pygame.Rect(self.x, self.y - 10, bar_width, 5)
+            fill_rect = pygame.Rect(self.x, self.y - 10, bar_width * health_pct, 5)
+            
+            # Color based on health percentage
             if health_pct > 0.6:
-                color = (0, 255, 0)
+                fill_color = (0, 255, 0)  # Green
             elif health_pct > 0.3:
-                color = (255, 255, 0)
+                fill_color = (255, 255, 0)  # Yellow
             else:
-                color = (255, 0, 0)
+                fill_color = (255, 0, 0)  # Red
                 
             pygame.draw.rect(surface, (40, 40, 40), outline_rect)
-            pygame.draw.rect(surface, color, fill_rect)
+            pygame.draw.rect(surface, fill_color, fill_rect)
             pygame.draw.rect(surface, (100, 100, 100), outline_rect, 1)
 
-    def draw(self):
-        screen.blit(self.img, (self.x, self.y))
-        self.draw_health_bar(screen)
-        
-        # Draw bomb trail effect
-        for particle in self.bomb_trail:
-            pygame.draw.circle(screen, (255, 100, 0), 
-                             (int(particle['x']), int(particle['y'])), 
-                             particle['size'])
+    def create_death_particles(self):
+        for _ in range(15):
+            color = random.choice([
+                (255, 255, 100), (255, 200, 50),
+                (200, 200, 200), (120, 120, 120),
+                (255, 255, 255), (100, 180, 255)
+            ])
+            self.death_particles.append({
+                'x': self.rect.centerx,
+                'y': self.rect.centery,
+                'dx': random.uniform(-2, 2),
+                'dy': random.uniform(-2, 2),
+                'size': random.randint(1, 4),
+                'life': random.randint(15, 30),
+                'color': color
+            })
 
-    def update(self):
+    def draw(self, surface):
+        # Draw the enemy image
+        surface.blit(self.img, (self.x, self.y))
+        
+        # Draw health bar if damaged
+        self.draw_health_bar(surface)
+        
+        # Draw damage effects if health is low
+        if self.health < self.max_health * 0.5 and not self.dead:
+            damage_pct = 1 - (self.health / self.max_health)
+            for _ in range(int(2 * damage_pct)):
+                smoke_pos = (
+                    self.x + random.randint(0, self.rect.width),
+                    self.y + random.randint(0, self.rect.height)
+                )
+                pygame.draw.circle(surface, 
+                                (random.randint(80, 120), random.randint(80, 120), random.randint(80, 120)),
+                                smoke_pos, random.randint(1, 3))
+        
+        # Draw hit particles
+        for p in self.hit_particles:
+            pygame.draw.circle(surface, p['color'], 
+                             (int(p['x']), int(p['y'])), 
+                             p['size'])
+
+    def update(self, player=None):
+        # Basic leftward movement (can be overridden)
         self.x -= self.speed
         self.rect.x = self.x
         
-        # Update bomb cooldown
-        if self.bomb_cooldown > 0:
-            self.bomb_cooldown -= 1
+        # Update shoot cooldown
+        if self.shoot_cooldown > 0:
+            self.shoot_cooldown -= 1
         
-        # Update bomb trail particles
-        for particle in self.bomb_trail[:]:
-            particle['x'] += particle['dx']
-            particle['y'] += particle['dy']
-            particle['life'] -= 1
-            if particle['life'] <= 0:
-                self.bomb_trail.remove(particle)
-
-    def should_drop_bomb(self):
-        return (self.bomb_cooldown <= 0 and 
-                self.x < WIDTH - 50 and 
-                self.x > 50)  # Don't drop bombs near edges
-
-    def drop_bomb(self):
-        self.bomb_cooldown = random.randint(30, 60)
+        # Add smoke particles when health is low
+        if self.health <= self.max_health * 0.5 and not self.dead and random.random() < 0.2:
+            self.hit_particles.append({
+                'x': self.rect.centerx - 10,
+                'y': self.rect.centery,
+                'dx': random.uniform(-1, -0.5),
+                'dy': random.uniform(-1, -0.3),
+                'size': random.randint(2, 4),
+                'life': random.randint(20, 40),
+                'color': (random.randint(50, 100), random.randint(50, 100), random.randint(50, 100))
+            })
         
-        # Create bomb trail effect
+        # Update existing particles
+        for p in self.hit_particles[:]:
+            p['life'] -= 1
+            if p['life'] <= 0:
+                self.hit_particles.remove(p)
+
+    def should_shoot(self, player=None):
+        return self.shoot_cooldown <= 0
+        
+    def shoot(self):
+        self.shoot_cooldown = random.randint(*self.shoot_delay_range)
+        if has_sound:
+            shoot_sound.play()
+        return Bullet(self.x, self.y + 15, False, damage=self.damage)
+
+    def draw_particles(self, surface):
+        for p in self.death_particles[:]:
+            pygame.draw.circle(surface, p['color'],
+                             (int(p['x']), int(p['y'])),
+                             p['size'])
+            p['x'] += p['dx']
+            p['y'] += p['dy']
+            p['life'] -= 1
+            if p['life'] <= 0:
+                self.death_particles.remove(p)
+
+class BasicEnemy(Enemy):
+    def __init__(self):
+        super().__init__(
+            enemy_type=1,
+            max_health=10,
+            speed=2,
+            shoot_delay_range=(30, 90),
+            damage=15
+        )
+
+class StationaryEnemy(Enemy):
+    def __init__(self):
+        super().__init__(
+            enemy_type=2,
+            max_health=20,
+            speed=3,
+            shoot_delay_range=(50, 90),
+            damage=10
+        )
+        self.stop_x = WIDTH * 0.8
+        self.has_stopped = False
+      
+    def update(self, player=None):
+        if not self.has_stopped:
+            # Move at full speed until stop point
+            self.x -= self.speed
+            if self.x <= self.stop_x:
+                self.has_stopped = True
+                self.speed = 0  # Stop completely
+        super().update(player)
+
+class VerticalEnemy(Enemy):
+    def __init__(self):
+        super().__init__(
+            enemy_type=3,
+            max_health=20,
+            speed=3,
+            shoot_delay_range=(50, 100),
+            damage=10
+        )
+        self.stop_x = WIDTH * 0.7
+        self.has_stopped = False
+        self.vertical_speed = 1.5
+        self.direction = 1  # 1 for down, -1 for up
+    
+    def update(self, player=None):
+        if not self.has_stopped:
+            self.x -= self.speed
+            if self.x <= self.stop_x:
+                self.has_stopped = True
+        else:
+            # Only move vertically after stopping
+            self.y += self.vertical_speed * self.direction
+            if self.y <= 0 or self.y >= HEIGHT - 30:
+                self.direction *= -1
+        
+        self.rect.y = self.y
+        super().update(player)
+
+class HomingEnemy(Enemy):
+    def __init__(self):
+        super().__init__(
+            enemy_type=4,
+            max_health=20,
+            speed=3,  # Movement speed before stopping
+            shoot_delay_range=(210, 210),  # Fixed delay
+            damage=20
+        )
+        self.stop_x = WIDTH * 0.9  # Stop at 90% of screen width
+        self.has_stopped = False
+        self.initial_delay = True
+    
+    def update(self, player=None):
+        # Move left until reaching stop position
+        if not self.has_stopped and self.x > self.stop_x:
+            self.x -= self.speed
+            if self.x <= self.stop_x:
+                self.has_stopped = True
+                self.speed = 0  # Stop moving horizontally
+        
+        self.rect.x = self.x
+        super().update(player)  # Handle shooting cooldown and particles
+    
+    def should_shoot(self, player=None):
+        # Only shoot when stopped and player is roughly aligned vertically
+        return (self.has_stopped 
+                and super().should_shoot() 
+                and player is not None 
+                and abs(player.y - self.y) < HEIGHT/2)
+    
+    def shoot(self, player=None):
+        if player is None:  # Safety check
+            return None
+            
+        self.shoot_cooldown = 240  # 4 second cooldown (60*4)
+        if has_sound:
+            shoot_sound.play()
+        
+        # Create homing missile aimed at player
+        return HomingMissile(self.x, self.y + 15, player.x, player.y)
+
+class DiagonalEnemy(Enemy):
+    def __init__(self):
+        super().__init__(
+            enemy_type=5,
+            max_health=10,
+            speed=4,  # Base speed
+            shoot_delay_range=(30, 90),
+            damage=20
+        )
+        self.angle = 0
+        self.target_angle = 0
+        self.angle_change_timer = 0
+        self.angle_change_delay = random.randint(120, 210)
+    
+    def update(self, player=None):
+        # Angle changing logic
+        self.angle_change_timer += 1
+        if self.angle_change_timer >= self.angle_change_delay:
+            self.set_new_angle()
+            self.angle_change_delay = random.randint(180, 240)
+        
+        # Smooth angle transition
+        angle_diff = self.target_angle - self.angle
+        if abs(angle_diff) > 0.5:
+            self.angle += angle_diff * 0.05
+        
+        # Movement based on angle
+        rad_angle = math.radians(self.angle)
+        # Maintain original speed magnitude
+        move_x = -self.base_speed * math.cos(rad_angle)  
+        move_y = self.base_speed * math.sin(rad_angle)
+        
+        self.x += move_x
+        self.y += move_y
+        
+        # Boundary checks
+        if self.y < HEIGHT * 0.2:
+            self.y = HEIGHT * 0.2
+            self.set_new_angle()
+        elif self.y > HEIGHT * 0.8:
+            self.y = HEIGHT * 0.8
+            self.set_new_angle()
+        
+        self.rect.x = self.x
+        self.rect.y = self.y
+        super().update(player)
+    
+    def set_new_angle(self):
+        if self.y < HEIGHT * 0.3:  # Too high
+            self.target_angle = random.randint(0, 25)
+        elif self.y > HEIGHT * 0.7:  # Too low
+            self.target_angle = random.randint(-25, 0)
+        else:
+            self.target_angle = random.randint(-25, 25)
+        self.angle_change_timer = 0
+
+class RightToLeftEnemy(Enemy):
+    def __init__(self):
+        super().__init__(
+            enemy_type=6,
+            max_health=10,
+            speed=3,  # Positive speed for right-to-left
+            shoot_delay_range=(60, 120),
+            damage=10
+        )
+        self.x = -100  # Start off left screen
+        self.speed = abs(self.speed)  # Ensure positive speed
+    
+    def update(self, player=None):
+        # Move right at constant speed
+        self.x += self.speed
+        self.rect.x = self.x
+        super().update(player)   
+
+class BomberEnemy(Enemy):
+    def __init__(self):
+        super().__init__(
+            enemy_type=7,
+            max_health=20,
+            speed=3,
+            shoot_delay_range=(30, 60),
+            damage=30
+        )
+        self.y = random.randint(50, int(HEIGHT * 0.35))
+        self.bomb_trail = []
+    
+    def should_shoot(self, player=None):  # Match parent signature
+        return self.shoot_cooldown <= 0 and self.x < WIDTH - 50 and self.x > 50
+    
+    def shoot(self, player=None):  # Match parent signature
+        self.shoot_cooldown = random.randint(30, 60)
+        
         for _ in range(5):
             self.bomb_trail.append({
                 'x': self.x + random.randint(0, self.rect.width),
@@ -1558,38 +958,8 @@ class Enemy7:
             })
         
         if has_sound:
-            shoot_sound.play()  # Or use a different bomb-drop sound
-        
-        return Bomb(self.x + self.rect.width//2, self.y + self.rect.height)
-
-    def create_death_particles(self):
-        for _ in range(15):  # Big explosion
-            color = random.choice([
-                (255, 100, 0),  # Orange
-                (255, 200, 0),  # Yellow
-                (150, 75, 0),   # Brown
-                (255, 50, 0)    # Red-orange
-            ])
-            self.death_particles.append({
-                'x': self.rect.centerx,
-                'y': self.rect.centery,
-                'dx': random.uniform(-2, 2),
-                'dy': random.uniform(-2, 2),
-                'size': random.randint(2, 4),
-                'life': random.randint(20, 40),
-                'color': color
-            })
-
-    def draw_particles(self, surface):
-        for p in self.death_particles[:]:
-            pygame.draw.circle(surface, p['color'],
-                             (int(p['x']), int(p['y'])),
-                             p['size'])
-            p['x'] += p['dx']
-            p['y'] += p['dy']
-            p['life'] -= 1
-            if p['life'] <= 0:
-                self.death_particles.remove(p)
+            shoot_sound.play()
+        return Bomb(self.x + self.rect.width//2, self.y + self.rect.height)          
 
 # Game setup
 player = Player()
@@ -1835,21 +1205,25 @@ while running:
         # Spawn enemies
         enemy_spawn_timer += 1
         if enemy_spawn_timer > 120:
+            enemy = None
             enemy_type = random.choices([1, 2, 3, 4, 5, 6, 7], weights=[20, 30, 20, 10, 10, 7, 7], k=1)[0]
             if enemy_type == 1:
-                enemies.append(Enemy1())
+                enemies.append(BasicEnemy())
             elif enemy_type == 2:
-                enemies.append(Enemy2())
+                enemies.append(StationaryEnemy())
             elif enemy_type == 3:
-                enemies.append(Enemy3())
+                enemies.append(VerticalEnemy())
             elif enemy_type == 4:
-                enemies.append(Enemy4())
+                enemies.append(HomingEnemy())
             elif enemy_type == 5:
-                enemies.append(Enemy5())
+                enemies.append(DiagonalEnemy())
             elif enemy_type == 6:
-                enemies.append(Enemy6())
-            else:
-                enemies.append(Enemy7())
+                enemies.append(RightToLeftEnemy())
+            elif enemy_type == 7:
+                enemies.append(BomberEnemy())
+
+            if enemy:
+                enemies.append(enemy)
             enemy_spawn_timer = 0
 
         # Update player bullets
@@ -1860,29 +1234,27 @@ while running:
 
         # Update enemies
         for enemy in enemies[:]:
-            enemy.update()
+            enemy.update(player)  # Pass player to all enemies
             if (enemy.x < -100) or (enemy.x > WIDTH + 100):
                 enemies.remove(enemy)
                 continue
+            # In your game loop where enemies shoot:
             if not enemy.dead:
-                if enemy.type == 4:
-                    if enemy.should_shoot(player):
-                        enemy_bullets.append(enemy.shoot(player.x, player.y))
-                
-                elif enemy.type == 6:  # Right-moving Enemy6
-                    if enemy.should_shoot():
-                        bullet = enemy.shoot()
-                        if bullet:  # Ensure we got a bullet
+                if enemy.type == 4:  # Homing enemy
+                    if enemy.should_shoot(player):  # Needs player for positioning
+                        bullet = enemy.shoot(player)  # Pass player to shoot
+                        if bullet:
                             enemy_bullets.append(bullet)
-
                 elif enemy.type == 7:  # Bomber
-                    if enemy.should_drop_bomb():
-                        bomb = enemy.drop_bomb()
-                        enemy_bullets.append(bomb)  # We reuse enemy_bullets for bombs
-
-                else:
-                    if enemy.should_shoot():
-                        enemy_bullets.append(enemy.shoot())
+                    if enemy.should_shoot():  # Doesn't need player
+                        bomb = enemy.shoot()  # No player needed
+                        if bomb:
+                            enemy_bullets.append(bomb)
+                else:  # Other enemies
+                    if enemy.should_shoot():  # Standard shooting
+                        bullet = enemy.shoot()  # No player needed
+                        if bullet:
+                            enemy_bullets.append(bullet)
 
         # Update enemy bullets
         i = 0
@@ -1931,7 +1303,7 @@ while running:
 
     # Draw enemies
     for enemy in enemies:
-        enemy.draw()
+        enemy.draw(screen)
         enemy.draw_particles(screen)
 
     # Draw player
