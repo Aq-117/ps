@@ -1,4 +1,4 @@
-# Plane Shooter Game with Proper Enemy Inheritance but still not at its best
+# Tried secondary weapon for player
 import pygame
 import random
 import sys
@@ -111,6 +111,12 @@ class Player:
         self.mouse_sensitivity = 0.3  # Adjust this value as needed
         self.mouse_button_down = False
 
+        self.missiles = 3
+        self.max_missiles = 3
+        self.missile_cooldown = 0
+        self.missile_recharge_timer = 0
+        self.missile_recharge_rate = 1200  # 20 seconds at 60 FPS
+
         self.rect = pygame.Rect(self.x, self.y, 
                                self.img.get_width() if self.img else 40,
                                self.img.get_height() if self.img else 30)
@@ -207,6 +213,16 @@ class Player:
             self.shoot_cooldown = self.shoot_delay
             if has_sound:
                 shoot_sound.play()
+
+    def shoot_missile(self):
+        if self.missiles > 0 and self.missile_cooldown <= 0:
+            self.missiles -= 1
+            self.missile_cooldown = 30  # Half-second cooldown
+            if has_sound:
+                shoot_sound.play()
+            return PlayerHomingMissile(self.x + self.rect.width, 
+                                    self.y + self.rect.height//2)
+        return None
 
     def flash(self):
         self.hit_flash = 10
@@ -355,7 +371,17 @@ class Player:
             self.hit_flash -= 1
             if self.hit_flash == 0:
                 self.invulnerable = False
+
+        # Missile recharge system
+        if self.missiles < self.max_missiles:
+            self.missile_recharge_timer += 1
+            if self.missile_recharge_timer >= self.missile_recharge_rate:
+                self.missiles += 1
+                self.missile_recharge_timer = 0
         
+        if self.missile_cooldown > 0:
+            self.missile_cooldown -= 1        
+
         # Update particles
         self.update_hit_particles()
 
@@ -500,6 +526,52 @@ class Bullet:
                 screen.blit(self.img, (self.x, self.y))
         else:
             pygame.draw.rect(screen, (0, 255, 0), (self.x, self.y, 10, 5))
+
+class PlayerHomingMissile:
+    def __init__(self, x, y):
+        self.x = x
+        self.y = y
+        self.img = pygame.transform.rotate(bullet_img, -45)  # Different visual
+        self.speed = 5
+        self.damage = 15
+        self.rect = pygame.Rect(x, y, 10, 10)
+        self.active_time = 0
+        self.max_active_time = 180  # 3 seconds at 60 FPS
+        
+    def update(self, enemies):
+        # Find nearest enemy
+        closest_enemy = None
+        min_distance = float('inf')
+        
+        for enemy in enemies:
+            if not enemy.dead:
+                dist = math.sqrt((enemy.rect.centerx - self.x)**2 + 
+                               (enemy.rect.centery - self.y)**2)
+                if dist < min_distance:
+                    min_distance = dist
+                    closest_enemy = enemy
+        
+        # Move toward closest enemy
+        if closest_enemy:
+            dx = closest_enemy.rect.centerx - self.x
+            dy = closest_enemy.rect.centery - self.y
+            dist = max(1, math.sqrt(dx*dx + dy*dy))
+            
+            self.x += (dx/dist) * self.speed
+            self.y += (dy/dist) * self.speed
+        
+        self.rect.x = self.x
+        self.rect.y = self.y
+        self.active_time += 1
+        
+        return self.active_time >= self.max_active_time  # Return True if expired
+        
+    def draw(self, surface):
+        # Calculate angle for proper rotation
+        angle = math.degrees(math.atan2(self.y - self.prev_y, self.x - self.prev_x)) if hasattr(self, 'prev_y') else 0
+        rotated_img = pygame.transform.rotate(self.img, -angle)
+        surface.blit(rotated_img, (self.x, self.y))
+        self.prev_x, self.prev_y = self.x, self.y  # Store for next frame
 
 class HomingMissile:
     def __init__(self, x, y, target_x, target_y):
@@ -713,7 +785,7 @@ class Enemy:
 class Enemy1(Enemy):
     def __init__(self):
         super().__init__(WIDTH, random.randint(50, HEIGHT - 50), 1, 10)
-        self.speed = 3
+        self.speed = 2
         
     def update(self):
         super().update()
@@ -991,6 +1063,7 @@ class Enemy7(Enemy):
 player = Player()
 enemies = []
 enemy_bullets = []
+player_missiles = []
 enemy_spawn_timer = 0
 score = 0
 planes_destroyed = 0
@@ -1179,6 +1252,11 @@ while running:
                     game_state = "paused"  # Return to pause from shop
                 else:
                     running = False
+
+            if event.key == pygame.K_e:  # E key for missiles
+                missile = player.shoot_missile()
+                if missile:
+                    player_missiles.append(missile)
             
             if event.key == pygame.K_m:
                 player.mouse_control = not player.mouse_control
@@ -1249,6 +1327,17 @@ while running:
             bullet.update()
             if bullet.x > WIDTH:
                 player.bullets.remove(bullet)
+
+        for missile in player_missiles[:]:
+            if missile.update(enemies):
+                player_missiles.remove(missile)
+            else:
+                # Check for collisions
+                for enemy in enemies[:]:
+                    if missile.rect.colliderect(enemy.rect) and not enemy.dead:
+                        enemy.health -= missile.damage
+                        player_missiles.remove(missile)
+                        break
 
         # Update enemies
         for enemy in enemies[:]:
@@ -1326,6 +1415,16 @@ while running:
     # Draw player
     player.draw(screen)
     player.draw_hit_particles(screen)
+
+    # Draw missile count
+    missile_text = font.render(f"Missiles: {player.missiles}/{player.max_missiles}", True, (100, 255, 100))
+    screen.blit(missile_text, (10, 130))
+
+    # Draw recharge indicator if applicable
+    if player.missiles < player.max_missiles:
+        recharge_pct = player.missile_recharge_timer / player.missile_recharge_rate
+        pygame.draw.rect(screen, (100, 100, 100), (150, 135, 100, 10))
+        pygame.draw.rect(screen, (100, 255, 100), (150, 135, 100 * recharge_pct, 10))
 
     # Draw particles
     for p in global_particles[:]:
