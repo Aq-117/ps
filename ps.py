@@ -1,4 +1,4 @@
-# Plane Shooter Game with Proper Enemy Inheritance
+# Added secondary weapon: Player's Homing Missile
 import pygame
 import random
 import sys
@@ -68,7 +68,7 @@ except:
 if has_sound:
     pygame.mixer.music.play(-1)  # -1 means loop indefinitely
 
-# Player Class (unchanged from original)
+# Player Class with missile additions
 class Player:
     def __init__(self):
         self.x = 100
@@ -81,6 +81,12 @@ class Player:
         self.health = self.max_health
         self.upgrade_cost_health = 100
         self.upgrade_cost_firerate = 150
+        
+        # Missile attributes
+        self.missiles = 3
+        self.max_missiles = 3
+        self.missile_recharge_timer = 0
+        self.missile_recharge_delay = 900  # 15 seconds at 60 FPS
         
         # Physics parameters
         self.speed = 5
@@ -114,6 +120,31 @@ class Player:
         self.rect = pygame.Rect(self.x, self.y, 
                                self.img.get_width() if self.img else 40,
                                self.img.get_height() if self.img else 30)
+
+    def fire_missile(self, enemies):
+        if self.missiles > 0 and not self.dead:
+            # Find closest enemy
+            closest_enemy = None
+            min_distance = float('inf')
+            
+            for enemy in enemies:
+                if not enemy.dead:
+                    dist = math.sqrt((enemy.rect.centerx - self.rect.centerx)**2 + 
+                                    (enemy.rect.centery - self.rect.centery)**2)
+                    if dist < min_distance:
+                        min_distance = dist
+                        closest_enemy = enemy
+            
+            if closest_enemy:
+                self.missiles -= 1
+                if has_sound:
+                    shoot_sound.play()
+                # Create missile with initial target position
+                return PlayerHomingMissile(self.x + self.rect.width, 
+                                        self.y + self.rect.height//2,
+                                        closest_enemy.rect.centerx,
+                                        closest_enemy.rect.centery)
+        return None
 
     def handle_input(self, keys, mouse_pos=None):
         if self.mouse_control and mouse_pos:
@@ -247,9 +278,9 @@ class Player:
         if self.death_animation:
             for p in self.death_particles:
                 pygame.draw.circle(surface, 
-                                 (255, random.randint(100, 200), 0),
-                                 (int(p['x']), int(p['y'])),
-                                 p['size'])
+                                (255, random.randint(100, 200), 0),
+                                (int(p['x']), int(p['y'])),
+                                p['size'])
 
     def update_hit_particles(self):
         for p in self.hit_particles[:]:
@@ -262,8 +293,8 @@ class Player:
     def draw_hit_particles(self, surface):
         for p in self.hit_particles:
             pygame.draw.circle(surface, p['color'], 
-                             (int(p['x']), int(p['y'])), 
-                             p['size'])
+                            (int(p['x']), int(p['y'])), 
+                            p['size'])
 
     def get_damage_state(self):
         health_pct = self.health / self.max_health  
@@ -317,6 +348,13 @@ class Player:
             self.shoot()
         if self.shoot_cooldown > 0:
             self.shoot_cooldown -= 1
+        
+        # Missile recharge
+        if self.missiles < self.max_missiles:
+            self.missile_recharge_timer += 1
+            if self.missile_recharge_timer >= self.missile_recharge_delay:
+                self.missiles = min(self.missiles + 1, self.max_missiles)
+                self.missile_recharge_timer = 0
         
         if self.hit_flash > 0:
             self.hit_flash -= 1
@@ -437,7 +475,66 @@ class Bullet:
         else:
             pygame.draw.rect(screen, (0, 255, 0), (self.x, self.y, 10, 5))
 
-class HomingMissile(Bullet):
+# Player's Homing Missile (distinct from enemy version)
+# Player's Homing Missile class (updated to properly track enemies)
+class PlayerHomingMissile(Bullet):
+    def __init__(self, x, y, target_x, target_y):
+        super().__init__(x, y, True, damage=30)
+        self.img = homing_missile_img
+        self.speed = 9  # Faster than regular bullets
+        self.target_x = target_x
+        self.target_y = target_y
+        self.rect = pygame.Rect(x, y, 15, 5)
+        
+    def update(self, enemies):
+        # Find closest enemy if we don't have a target
+        closest_enemy = None
+        min_distance = float('inf')
+        
+        for enemy in enemies:
+            if not enemy.dead:
+                dist = math.sqrt((enemy.rect.centerx - self.x)**2 + 
+                                (enemy.rect.centery - self.y)**2)
+                if dist < min_distance:
+                    min_distance = dist
+                    closest_enemy = enemy
+        
+        if closest_enemy:
+            self.target_x = closest_enemy.rect.centerx
+            self.target_y = closest_enemy.rect.centery
+            
+            # Calculate direction to target
+            dx = self.target_x - self.x
+            dy = self.target_y - self.y
+            dist = max(1, math.sqrt(dx*dx + dy*dy))
+            
+            # Normalize and apply speed
+            self.speed_x = (dx / dist) * self.speed
+            self.speed_y = (dy / dist) * self.speed
+        
+        # Update position
+        self.x += self.speed_x
+        self.y += self.speed_y
+        self.rect.x = self.x
+        self.rect.y = self.y
+        
+        # Remove if off-screen
+        if (self.x < -50 or self.x > WIDTH + 50 or 
+            self.y < -50 or self.y > HEIGHT + 50):
+            return False
+            
+        return True
+        
+    def draw(self):
+        if self.img:
+            angle = math.degrees(math.atan2(self.speed_y, self.speed_x))
+            rotated_img = pygame.transform.rotate(self.img, -angle)
+            screen.blit(rotated_img, (self.x, self.y))
+        else:
+            pygame.draw.rect(screen, (0, 255, 255), (self.x, self.y, 15, 5))  # Cyan for player missiles
+
+# Enemy Homing Missile (distinct from player version)
+class EnemyHomingMissile(Bullet):
     def __init__(self, x, y, target_x, target_y):
         super().__init__(x, y, False, damage=20)
         self.img = homing_missile_img
@@ -470,7 +567,7 @@ class HomingMissile(Bullet):
         
         self.x += self.current_dx * self.base_speed
         self.y += self.current_dy * self.base_speed
-        self.x -= 1.5
+        self.x -= 1.5  # Always drift left slightly
         
         self.rect.x = self.x
         self.rect.y = self.y
@@ -717,7 +814,7 @@ class Enemy4(Enemy):
         self.shoot_cooldown = 240  # Original 4 second cooldown
         if has_sound:
             shoot_sound.play()
-        missile = HomingMissile(self.x, self.y + 15, player_x, player_y)
+        missile = EnemyHomingMissile(self.x, self.y + 15, player_x, player_y)
         missile.damage = 20  # Original damage
         return missile
 
@@ -972,6 +1069,7 @@ def draw_start_screen():
         "Controls:",
         "WASD - Move your plane",
         "SPACE - Shoot bullets",
+        "E or Right Click - Fire homing missile",
         "Avoid enemy bullets and destroy enemies!",
         "",
         f"Starting Health: {player.health}"
@@ -1116,6 +1214,10 @@ while running:
         if event.type == pygame.MOUSEBUTTONDOWN and player.mouse_control:
             if event.button == 1:  # Left mouse button
                 player.mouse_button_down = True
+            elif event.button == 3:  # Right mouse button
+                missile = player.fire_missile(enemies)
+                if missile:
+                    player.bullets.append(missile)
         elif event.type == pygame.MOUSEBUTTONUP and player.mouse_control:
             if event.button == 1:  # Left mouse button
                 player.mouse_button_down = False
@@ -1138,6 +1240,10 @@ while running:
             if game_state == "running":
                 if event.key == pygame.K_p:
                     game_state = "paused"
+                elif event.key == pygame.K_e:
+                    missile = player.fire_missile(enemies)
+                    if missile:
+                        player.bullets.append(missile)
             
             elif game_state == "paused":
                 if event.key == pygame.K_p:
@@ -1193,11 +1299,15 @@ while running:
                 enemies.append(Enemy7())
             enemy_spawn_timer = 0
 
-        # Update player bullets
+        # Update player bullets (including missiles)
         for bullet in player.bullets[:]:
-            bullet.update()
-            if bullet.x > WIDTH:
-                player.bullets.remove(bullet)
+            if isinstance(bullet, PlayerHomingMissile):
+                if not bullet.update(enemies):  # Pass enemies list for tracking
+                    player.bullets.remove(bullet)
+            else:
+                bullet.update()
+                if bullet.x > WIDTH:
+                    player.bullets.remove(bullet)
 
         # Update enemies
         for enemy in enemies[:]:
@@ -1230,11 +1340,14 @@ while running:
         while i < len(enemy_bullets):
             bullet = enemy_bullets[i]
             remove_bullet = False
-            if isinstance(bullet, HomingMissile):
+            if isinstance(bullet, EnemyHomingMissile):
                 if not bullet.update(player.x, player.y):
                     remove_bullet = True
                 elif (bullet.x < -50 or bullet.x > WIDTH + 50 or
                       bullet.y < -50 or bullet.y > HEIGHT + 50):
+                    remove_bullet = True
+            elif isinstance(bullet, Bomb):
+                if not bullet.update():
                     remove_bullet = True
             else:
                 bullet.update()
@@ -1292,9 +1405,16 @@ while running:
     health_text = font.render(f"Health: {player.health}/{player.max_health}", True, WHITE)
     score_text = font.render(f"Score: {score}", True, WHITE)
     planes_destroyed_text = font.render(f"Planes destroyed: {planes_destroyed}", True, WHITE)
+    missile_text = font.render(f"Missiles: {player.missiles}/{player.max_missiles}", True, (0, 255, 255))
     screen.blit(health_text, (10, 10))
     screen.blit(score_text, (10, 50))
     screen.blit(planes_destroyed_text, (10, 90))
+    screen.blit(missile_text, (10, 130))
+
+    # Show recharge progress if not full
+    # if player.missiles < player.max_missiles:
+    #     recharge_pct = player.missile_recharge_timer / player.missile_recharge_delay
+    #     pygame.draw.rect(screen, (0, 100, 100), (120, 140, 100 * recharge_pct, 5))
 
     # Draw control scheme indicator
     control_text = font.render("Controls: MOUSE" if player.mouse_control else "Controls: KEYBOARD", 
@@ -1346,16 +1466,11 @@ while running:
             font.render(f"Planes destroyed: {planes_destroyed}", True, WHITE),
             font.render("Press R to restart", True, WHITE),
             font.render("Press ESC to quit", True, WHITE),
-            #font.render("Press S to open shop", True, WHITE) if not shop_active else font.render("Press S to close shop", True, WHITE)
         ]
         
         for i, text in enumerate(texts):
             screen.blit(text, (WIDTH//2 - text.get_width()//2, HEIGHT//2 - 50 + i*40))
         
-        # Auto-exit after 2 seconds if no input
-        #if pygame.time.get_ticks() - game_over_time > 2000:
-        #    running = False
-
     # 6. Refresh Screen
     pygame.display.flip()
     clock.tick(60)
