@@ -1,9 +1,11 @@
-# Added secondary weapon: Player's Homing Missile
+#Trying proper game state management
 import pygame
 import random
 import sys
 import os
 import math
+import json
+from enum import Enum
 
 # Initialize Pygame
 pygame.init()
@@ -12,9 +14,24 @@ screen = pygame.display.set_mode((WIDTH, HEIGHT))
 pygame.display.set_caption("Plane Shooter")
 global_particles = []
 
+# Game States
+class GameState(Enum):
+    MAIN_MENU = 0
+    PLAYING = 1
+    PAUSED = 2
+    SHOP = 3
+    GAME_OVER = 4
+    UPGRADES = 5
+
 # Colors (fallback if images fail)
 BLACK = (0, 0, 0)
 WHITE = (255, 255, 255)
+GRAY = (100, 100, 100)
+LIGHT_GRAY = (200, 200, 200)
+BLUE = (0, 120, 255)
+RED = (255, 50, 50)
+GREEN = (0, 255, 0)
+YELLOW = (255, 255, 0)
 
 # Load images with error handling
 def load_image(name, scale=1):
@@ -28,12 +45,12 @@ def load_image(name, scale=1):
         # Create colored rectangles as fallback
         surf = pygame.Surface((50, 30), pygame.SRCALPHA)
         if "player" in name:
-            pygame.draw.polygon(surf, (0, 120, 255), [(50,15), (0,0), (0,30)])
+            pygame.draw.polygon(surf, BLUE, [(50,15), (0,0), (0,30)])
         elif "enemy" in name:
-            pygame.draw.polygon(surf, (255, 50, 50), [(0,15), (50,0), (50,30)])
+            pygame.draw.polygon(surf, RED, [(0,15), (50,0), (50,30)])
         elif "bullet" in name:
             surf = pygame.Surface((10, 5), pygame.SRCALPHA)
-            pygame.draw.rect(surf, (0, 255, 0), (0, 0, 10, 5))
+            pygame.draw.rect(surf, GREEN, (0, 0, 10, 5))
         return surf
 
 # Load all assets
@@ -68,9 +85,11 @@ except:
 if has_sound:
     pygame.mixer.music.play(-1)  # -1 means loop indefinitely
 
-# Player Class with missile additions
 class Player:
     def __init__(self):
+        self.reset()
+        
+    def reset(self):
         self.x = 100
         self.y = HEIGHT // 2
         self.img = player_img
@@ -123,7 +142,6 @@ class Player:
 
     def fire_missile(self, enemies):
         if self.missiles > 0 and not self.dead:
-            # Find closest enemy
             closest_enemy = None
             min_distance = float('inf')
             
@@ -139,7 +157,6 @@ class Player:
                 self.missiles -= 1
                 if has_sound:
                     shoot_sound.play()
-                # Create missile with initial target position
                 return PlayerHomingMissile(self.x + self.rect.width, 
                                         self.y + self.rect.height//2,
                                         closest_enemy.rect.centerx,
@@ -443,7 +460,6 @@ class Player:
         if self.death_animation:
             self.draw_death_effect(surface)
 
-# Bullet Class (unchanged from original)
 class Bullet:
     def __init__(self, x, y, is_player, damage=1):
         self.x = x
@@ -475,8 +491,6 @@ class Bullet:
         else:
             pygame.draw.rect(screen, (0, 255, 0), (self.x, self.y, 10, 5))
 
-# Player's Homing Missile (distinct from enemy version)
-# Player's Homing Missile class (updated to properly track enemies)
 class PlayerHomingMissile(Bullet):
     def __init__(self, x, y, target_x, target_y):
         super().__init__(x, y, True, damage=30)
@@ -533,7 +547,6 @@ class PlayerHomingMissile(Bullet):
         else:
             pygame.draw.rect(screen, (0, 255, 255), (self.x, self.y, 15, 5))  # Cyan for player missiles
 
-# Enemy Homing Missile (distinct from player version)
 class EnemyHomingMissile(Bullet):
     def __init__(self, x, y, target_x, target_y):
         super().__init__(x, y, False, damage=20)
@@ -605,7 +618,6 @@ class Bomb(Bullet):
                                         self.y + self.img.get_height()/2))
         screen.blit(rotated_img, rect.topleft)
 
-# Base Enemy Class (carefully adjusted to match original behavior)
 class Enemy:
     def __init__(self, x, y, enemy_type, max_health=10):
         self.x = x
@@ -727,7 +739,6 @@ class Enemy:
             if p['life'] <= 0:
                 self.death_particles.remove(p)
 
-# Enemy Type 1: Basic enemy that moves left across screen (original speed)
 class Enemy1(Enemy):
     def __init__(self):
         super().__init__(WIDTH, random.randint(50, HEIGHT - 50), 1, 10)
@@ -738,7 +749,6 @@ class Enemy1(Enemy):
         self.x -= self.speed
         self.rect.x = self.x
 
-# Enemy Type 2: Stops at 20% of screen and stays still (original behavior)
 class Enemy2(Enemy):
     def __init__(self):
         super().__init__(WIDTH, random.randint(50, HEIGHT - 50), 2, 20)
@@ -761,7 +771,6 @@ class Enemy2(Enemy):
             shoot_sound.play()
         return Bullet(self.x, self.y + 15, False, damage=15)  # Original damage
 
-# Enemy Type 3: Stops at 20% of screen then moves vertically (original behavior)
 class Enemy3(Enemy):
     def __init__(self):
         super().__init__(WIDTH, random.randint(50, HEIGHT - 50), 3, 20)
@@ -791,7 +800,6 @@ class Enemy3(Enemy):
             shoot_sound.play()
         return Bullet(self.x, self.y + 15, False, damage=10)  # Original damage
 
-# Enemy Type 4: Homing missile launcher (original behavior)
 class Enemy4(Enemy):
     def __init__(self):
         super().__init__(WIDTH, random.randint(50, HEIGHT - 50), 4, 20)
@@ -818,13 +826,9 @@ class Enemy4(Enemy):
         missile.damage = 20  # Original damage
         return missile
 
-# Enemy Type 5: Angled movement enemy (fixed to match original behavior)
 class Enemy5(Enemy):
     def __init__(self):
-        # Initialize with base parameters
         super().__init__(WIDTH, random.randint(int(HEIGHT * 0.2), int(HEIGHT * 0.7)), 5, 10)
-        
-        # Enemy5-specific attributes
         self.base_speed = 4
         self.current_speed = self.base_speed
         self.speed_x = -self.base_speed
@@ -837,7 +841,6 @@ class Enemy5(Enemy):
         self.set_new_angle()
 
     def set_new_angle(self):
-        """Calculate new movement angle (can't be inherited)"""
         min_angle = -25
         max_angle = 25
         
@@ -851,31 +854,25 @@ class Enemy5(Enemy):
         self.angle_change_timer = 0
 
     def update(self):
-        # Update angle change timer
         self.angle_change_timer += 1
         if self.angle_change_timer >= self.angle_change_delay:
             self.set_new_angle()
-            self.angle_change_delay = random.randint(180, 240)  # New 3-4 second delay
+            self.angle_change_delay = random.randint(180, 240)
 
-        # Smoothly transition to target angle
         angle_diff = self.target_angle - self.angle
-        if abs(angle_diff) > 0.5:  # If significant difference remains
-            self.angle += angle_diff * 0.05  # 5% of difference each frame
-            # Reduce speed while turning (for smoothness)
+        if abs(angle_diff) > 0.5:
+            self.angle += angle_diff * 0.05
             self.current_speed = self.base_speed * 0.8
         else:
             self.current_speed = self.base_speed
 
-        # Convert angle to movement
         rad_angle = math.radians(self.angle)
         self.speed_x = -self.current_speed * math.cos(rad_angle)
         self.speed_y = self.current_speed * math.sin(rad_angle)
 
-        # Update position
         self.x += self.speed_x
         self.y += self.speed_y
 
-        # Enforce vertical boundaries
         if self.y < HEIGHT * 0.2:
             self.y = HEIGHT * 0.2
             self.set_new_angle()
@@ -891,26 +888,20 @@ class Enemy5(Enemy):
 
     def draw(self, screen):
         if self.img:
-            # Rotate image to face movement direction
             rotated_img = pygame.transform.rotate(self.img, -self.angle)
-            # Get the rect of the rotated image
             rotated_rect = rotated_img.get_rect()
-            # Set the center position to match the enemy's position
             rotated_rect.center = (self.x + self.img.get_width() // 2, 
                                 self.y + self.img.get_height() // 2)
-            # Draw the rotated image
             screen.blit(rotated_img, rotated_rect)
         else:
-            # Fallback drawing
-            pygame.draw.polygon(screen, (200, 50, 200),  # Different color
+            pygame.draw.polygon(screen, (200, 50, 200),
                             [(self.x, self.y+15), 
                                 (self.x+40, self.y), 
                                 (self.x+40, self.y+30)])
         self.draw_health_bar(screen)
         if self.health < self.max_health:
             damage_pct = 1 - (self.health / self.max_health)
-            if damage_pct > 0.5:  # More than 50% damaged
-                # Add smoke effect
+            if damage_pct > 0.5:
                 for _ in range(int(2 * damage_pct)):
                     smoke_pos = (
                         self.x + random.randint(0, self.rect.width),
@@ -920,9 +911,7 @@ class Enemy5(Enemy):
                                     (random.randint(80, 120), random.randint(80, 120), random.randint(80, 120)),
                                     smoke_pos, random.randint(1, 3))
 
-
     def shoot(self):
-        """Overridden shoot for angled bullets"""
         self.shoot_cooldown = random.randint(30, 90)
         if has_sound:
             shoot_sound.play()
@@ -936,13 +925,12 @@ class Enemy5(Enemy):
         bullet.speed_y = speed_y
         return bullet
 
-# Enemy Type 6: Right-moving enemy (fixed shooting direction)
 class Enemy6(Enemy):
     def __init__(self):
         super().__init__(-100, random.randint(50, HEIGHT - 50), 6, 10)
         self.speed = 3
         self.shoot_cooldown = random.randint(60, 120)
-        self.img = pygame.transform.flip(self.img, True, False)  # Flip once at init
+        self.img = pygame.transform.flip(self.img, True, False)
         
     def update(self):
         super().update()
@@ -965,20 +953,17 @@ class Enemy6(Enemy):
         if has_sound:
             shoot_sound.play()
         
-        # Create bullet moving right (positive speed)
         bullet = Bullet(self.x + self.rect.width, self.y + self.rect.height//2, False, damage=10)
-        bullet.speed_x = 8  # Faster bullets since enemy is moving right
+        bullet.speed_x = 8
         bullet.speed_y = 0
-        # Ensure bullet image faces right
         bullet.img = pygame.transform.flip(bullet_img, True, False)
         return bullet
 
-# Enemy Type 7: Bomber enemy (original behavior)
 class Enemy7(Enemy):
     def __init__(self):
         super().__init__(WIDTH, random.randint(50, int(HEIGHT * 0.35)), 7, 20)
-        self.speed = 3  # Original speed
-        self.bomb_cooldown = random.randint(30, 60)  # Original cooldown
+        self.speed = 3
+        self.bomb_cooldown = random.randint(30, 60)
         self.bomb_trail = []
         
     def update(self):
@@ -1011,7 +996,7 @@ class Enemy7(Enemy):
                 self.x > 50)
 
     def drop_bomb(self):
-        self.bomb_cooldown = random.randint(30, 60)  # Original cooldown
+        self.bomb_cooldown = random.randint(30, 60)
         
         for _ in range(5):
             self.bomb_trail.append({
@@ -1029,454 +1014,489 @@ class Enemy7(Enemy):
         
         return Bomb(self.x + self.rect.width//2, self.y + self.rect.height)
 
-# Game setup
-player = Player()
-enemies = []
-enemy_bullets = []
-enemy_spawn_timer = 0
-score = 0
-planes_destroyed = 0
-clock = pygame.time.Clock()
-font = pygame.font.SysFont(None, 36)
-
-title_font = pygame.font.SysFont(None, 72)
-instruction_font = pygame.font.SysFont(None, 24)
-pakts_font = pygame.font.SysFont(None, 50)
-
-def restart_game():
-    global player, enemies, enemy_bullets, score, enemy_spawn_timer, game_state, game_over
-    player = Player()
-    enemies = []
-    enemy_bullets = []
-    score = 0
-    enemy_spawn_timer = 0
-    game_state = "running"  # Reset to running state
-    game_over = False
-
-def draw_start_screen():
-    if bg_img:
-        screen.blit(bg_img, (0, 0))
-    else:
-        screen.fill(BLACK)
-    
-    # Game title
-    title = title_font.render("PLANE SHOOTER", True, WHITE)
-    title_rect = title.get_rect(center=(WIDTH//2, HEIGHT//3))
-    screen.blit(title, title_rect)
-    
-    # Instructions
-    instructions = [
-        "Controls:",
-        "WASD - Move your plane",
-        "SPACE - Shoot bullets",
-        "E or Right Click - Fire homing missile",
-        "Avoid enemy bullets and destroy enemies!",
-        "",
-        f"Starting Health: {player.health}"
-    ]
-    
-    for i, line in enumerate(instructions):
-        text = instruction_font.render(line, True, WHITE)
-        text_rect = text.get_rect(center=(WIDTH//2, HEIGHT//2 + i*30))
-        screen.blit(text, text_rect)
-    
-    # Start prompt
-    prompt = pakts_font.render("Press any key to start", True, WHITE)
-    prompt_rect = prompt.get_rect(center=(WIDTH//2, HEIGHT - 100))
-    screen.blit(prompt, prompt_rect)
-    
-    pygame.display.flip()
-
-def show_start_screen():
-    waiting = True
-    while waiting:
-        for event in pygame.event.get():
-            if event.type == pygame.QUIT:
-                pygame.quit()
-                sys.exit()
-            if event.type == pygame.KEYUP:
-                waiting = False
-        draw_start_screen()
-        clock.tick(60)
-
-# Show start screen before main game
-show_start_screen()
-
-def check_collisions():
-    global score, global_particles, planes_destroyed
-
-    # Player bullets hit enemies
-    for bullet in player.bullets[:]:
-        for enemy in enemies[:]:
-            if bullet.rect.colliderect(enemy.rect) and not enemy.dead:
-                enemy.health -= bullet.damage  # Reduce health by bullet's damage
-                
-                if enemy.health <= 0:
-                    enemy.create_death_particles()
-                    global_particles.extend(enemy.death_particles)
-                    player.bullets.remove(bullet)
-                    enemies.remove(enemy)
-                    score += 1 * enemy.max_health  # More points for tougher enemies
-                    planes_destroyed += 1
-                    if has_sound:
-                        explosion_sound.play()
-                else:
-                    # Just damage, not destroyed
-                    player.bullets.remove(bullet)
-                    # Add hit effect
-                    for _ in range(3):
-                        enemy.death_particles.append({
-                            'x': bullet.rect.centerx,
-                            'y': bullet.rect.centery,
-                            'dx': random.uniform(-1, 1),
-                            'dy': random.uniform(-1, 1),
-                            'size': random.randint(1, 2),
-                            'life': random.randint(5, 10),
-                            'color': (255, random.randint(100, 200), 0)
-                        })
-                    if has_sound:
-                        shoot_sound.play()  # Different sound for hit vs kill
-                break
-
-    # Enemy collision with player (INSTANT DEATH)
-    for enemy in enemies[:]:
-        if not player.invulnerable and not enemy.dead and player.rect.colliderect(enemy.rect):
-            if player.health > 0:
-                player.health = 0  # Instantly set to 0
-                player.init_death_effect()  # Start death animation
-                if has_sound:
-                    explosion_sound.play()
-            break
-
-def draw_shop():
-    screen.fill((0, 0, 50))  # Dark blue background
-    title = font.render("UPGRADE SHOP", True, WHITE)
-    screen.blit(title, (WIDTH//2 - title.get_width()//2, 50))
-    
-    # Upgrade options
-    options = [
-        (f"1. +10 Max Health (Cost: {player.upgrade_cost_health})", 
-         player.upgrade_cost_health, "health"),
-        (f"2. Faster Fire Rate (Cost: {player.upgrade_cost_firerate})", 
-         player.upgrade_cost_firerate, "firerate"),
-        ("3. Exit Shop", 0, "exit")
-    ]
-    
-    for i, (text, cost, _) in enumerate(options):
-        y_pos = 150 + i * 60
-        # Gray out if unaffordable
-        color = WHITE if score >= cost or cost == 0 else (100, 100, 100)
-        screen.blit(font.render(text, True, color), (WIDTH//2 - 200, y_pos))
-    
-    # Display current stats
-    stats = [
-        f"Current Max Health: {player.max_health}",
-        f"Current Fire Rate: {60/(player.shoot_delay):.1f} shots/sec",  # Convert delay to shots/second
-        f"Your Score: {score}"
-    ]
-    for i, stat in enumerate(stats):
-        screen.blit(font.render(stat, True, WHITE), (WIDTH//2 - 200, 350 + i * 40))
-
-def draw_pause_screen():
-    overlay = pygame.Surface((WIDTH, HEIGHT), pygame.SRCALPHA)
-    overlay.fill((0, 0, 0, 180))  # Semi-transparent black
-    screen.blit(overlay, (0, 0))
-    
-    texts = [
-        ("PAUSED", title_font),
-        ("Press P to Resume", font),
-        ("Press 5 for Shop", font),
-        ("Press ESC to Quit", font)
-    ]
-    
-    for i, (text, font_obj) in enumerate(texts):
-        rendered = font_obj.render(text, True, WHITE)
-        screen.blit(rendered, (WIDTH//2 - rendered.get_width()//2, 
-                             HEIGHT//2 - 100 + i * 50))
-
-# Main game loop
-game_state = "running"  # Can be "running", "paused", "shop", "game_over"
-running = True
-game_over = False
-game_over_time = 0
-player.mouse_control = False  # Disable mouse control by default
-clock = pygame.time.Clock()
-
-while running:
-    # Getting mouse position
-    mouse_pos = pygame.mouse.get_pos()
-    # 1. Event handling
-    for event in pygame.event.get():
-        if event.type == pygame.QUIT:
-            running = False
-
-            # Mouse button events
-        if event.type == pygame.MOUSEBUTTONDOWN and player.mouse_control:
-            if event.button == 1:  # Left mouse button
-                player.mouse_button_down = True
-            elif event.button == 3:  # Right mouse button
-                missile = player.fire_missile(enemies)
-                if missile:
-                    player.bullets.append(missile)
-        elif event.type == pygame.MOUSEBUTTONUP and player.mouse_control:
-            if event.button == 1:  # Left mouse button
-                player.mouse_button_down = False
+class Game:
+    def __init__(self):
+        self.state = GameState.MAIN_MENU
+        self.player = Player()
+        self.enemies = []
+        self.enemy_bullets = []
+        self.player_bullets = []
+        self.enemy_spawn_timer = 0
+        self.score = 0
+        self.planes_destroyed = 0
+        self.clock = pygame.time.Clock()
+        self.font = pygame.font.SysFont(None, 36)
+        self.title_font = pygame.font.SysFont(None, 72)
+        self.instruction_font = pygame.font.SysFont(None, 24)
+        self.pakts_font = pygame.font.SysFont(None, 50)
+        self.player_name = "Player1"
+        self.save_file = "savegame.json"
+        self.load_game()
         
-        if event.type == pygame.KEYDOWN:
-            # Global controls (work in any state)
-            if event.key == pygame.K_ESCAPE:
-                if game_state == "shop":
-                    game_state = "paused"  # Return to pause from shop
-                else:
-                    running = False
+    def load_game(self):
+        try:
+            with open(self.save_file, "r") as f:
+                data = json.load(f)
+                self.player_name = data.get("player_name", "Player1")
+                self.score = data.get("score", 0)
+                self.planes_destroyed = data.get("planes_destroyed", 0)
+                self.player.max_health = data.get("max_health", 100)
+                self.player.health = self.player.max_health
+                self.player.shoot_delay = data.get("shoot_delay", 15)
+                self.player.upgrade_cost_health = data.get("upgrade_cost_health", 100)
+                self.player.upgrade_cost_firerate = data.get("upgrade_cost_firerate", 150)
+        except FileNotFoundError:
+            self.reset_game()
             
-            if event.key == pygame.K_m:
-                player.mouse_control = not player.mouse_control
-                if not player.mouse_control:
-                    # When switching to keyboard, gently center the plane
-                    player.vel_y = (HEIGHT//2 - player.y) * 0.05
-
-            # State-specific controls
-            if game_state == "running":
-                if event.key == pygame.K_p:
-                    game_state = "paused"
-                elif event.key == pygame.K_e:
-                    missile = player.fire_missile(enemies)
-                    if missile:
-                        player.bullets.append(missile)
+    def save_game(self):
+        data = {
+            "player_name": self.player_name,
+            "score": self.score,
+            "planes_destroyed": self.planes_destroyed,
+            "max_health": self.player.max_health,
+            "shoot_delay": self.player.shoot_delay,
+            "upgrade_cost_health": self.player.upgrade_cost_health,
+            "upgrade_cost_firerate": self.player.upgrade_cost_firerate
+        }
+        with open(self.save_file, "w") as f:
+            json.dump(data, f)
             
-            elif game_state == "paused":
-                if event.key == pygame.K_p:
-                    game_state = "running"
-                elif event.key == pygame.K_5:
-                    game_state = "shop"
-            
-            elif game_state == "shop":
-                if event.key == pygame.K_3:
-                    game_state = "paused"  # Return to pause menu
-                elif event.key == pygame.K_1 and score >= player.upgrade_cost_health:
-                    player.max_health += 10
-                    player.health += 10
-                    score -= player.upgrade_cost_health
-                    player.upgrade_cost_health += 50
-                elif event.key == pygame.K_2 and score >= player.upgrade_cost_firerate:
-                    player.shoot_delay = max(5, player.shoot_delay - 3)
-                    score -= player.upgrade_cost_firerate
-                    player.upgrade_cost_firerate += 75
-            
-            elif game_state == "game_over":
-                if event.key == pygame.K_r:
-                    restart_game()
-                    game_state = "running"
-                elif event.key == pygame.K_ESCAPE:
-                    running = False
-
-
-    # 2. Get Input
-    keys = pygame.key.get_pressed()
-    
-    # 3. Update Game State
-    if game_state == "running" and not player.dead:
-        player.update(keys, mouse_pos)
+    def reset_game(self):
+        self.player.reset()
+        self.enemies = []
+        self.enemy_bullets = []
+        self.player_bullets = []
+        self.enemy_spawn_timer = 0
+        self.score = 0
+        self.planes_destroyed = 0
         
-        # Spawn enemies
-        enemy_spawn_timer += 1
-        if enemy_spawn_timer > 120:
-            enemy_type = random.choices([1, 2, 3, 4, 5, 6, 7], weights=[20, 30, 20, 10, 10, 7, 7], k=1)[0]
-            if enemy_type == 1:
-                enemies.append(Enemy1())
-            elif enemy_type == 2:
-                enemies.append(Enemy2())
-            elif enemy_type == 3:
-                enemies.append(Enemy3())
-            elif enemy_type == 4:
-                enemies.append(Enemy4())
-            elif enemy_type == 5:
-                enemies.append(Enemy5())
-            elif enemy_type == 6:
-                enemies.append(Enemy6())
-            else:
-                enemies.append(Enemy7())
-            enemy_spawn_timer = 0
-
-        # Update player bullets (including missiles)
-        for bullet in player.bullets[:]:
-            if isinstance(bullet, PlayerHomingMissile):
-                if not bullet.update(enemies):  # Pass enemies list for tracking
-                    player.bullets.remove(bullet)
-            else:
-                bullet.update()
-                if bullet.x > WIDTH:
-                    player.bullets.remove(bullet)
-
-        # Update enemies
-        for enemy in enemies[:]:
-            enemy.update()
-            if (enemy.x < -100) or (enemy.x > WIDTH + 100):
-                enemies.remove(enemy)
-                continue
-            if not enemy.dead:
-                if enemy.type == 4:
-                    if enemy.should_shoot(player):
-                        enemy_bullets.append(enemy.shoot(player.x, player.y))
-                
-                elif enemy.type == 6:  # Right-moving Enemy6
-                    if enemy.should_shoot():
-                        bullet = enemy.shoot()
-                        if bullet:  # Ensure we got a bullet
-                            enemy_bullets.append(bullet)
-
-                elif enemy.type == 7:  # Bomber
-                    if enemy.should_drop_bomb():
-                        bomb = enemy.drop_bomb()
-                        enemy_bullets.append(bomb)  # We reuse enemy_bullets for bombs
-
-                else:
-                    if enemy.should_shoot():
-                        enemy_bullets.append(enemy.shoot())
-
-        # Update enemy bullets
-        i = 0
-        while i < len(enemy_bullets):
-            bullet = enemy_bullets[i]
-            remove_bullet = False
-            if isinstance(bullet, EnemyHomingMissile):
-                if not bullet.update(player.x, player.y):
-                    remove_bullet = True
-                elif (bullet.x < -50 or bullet.x > WIDTH + 50 or
-                      bullet.y < -50 or bullet.y > HEIGHT + 50):
-                    remove_bullet = True
-            elif isinstance(bullet, Bomb):
-                if not bullet.update():
-                    remove_bullet = True
-            else:
-                bullet.update()
-                if bullet.x < 0:
-                    remove_bullet = True
-            if not remove_bullet and bullet.rect.colliderect(player.rect):
-                remove_bullet = True
-                if not player.invulnerable:
-                    player.health -= bullet.damage
-                    if player.health <= 0:
-                        player.health = 0
-                        player.init_death_effect()
-                    else:
-                        player.flash()
-                    if has_sound:
-                        explosion_sound.play()
-            if remove_bullet:
-                enemy_bullets.pop(i)
-            else:
-                i += 1
-
-        check_collisions()
-
-    # 4. Drawing
-    if bg_img:
-        screen.blit(bg_img, (0, 0))
-    else:
-        screen.fill(BLACK)
-
-    # Draw bullets
-    for bullet in player.bullets:
-        bullet.draw()
-    for bullet in enemy_bullets:
-        bullet.draw()
-
-    # Draw enemies
-    for enemy in enemies:
-        enemy.draw(screen)
-        enemy.draw_particles(screen)
-
-    # Draw player
-    player.draw(screen)
-    player.draw_hit_particles(screen)
-
-    # Draw particles
-    for p in global_particles[:]:
-        pygame.draw.circle(screen, p['color'], (int(p['x']), int(p['y'])), p['size'])
-        p['x'] += p['dx']
-        p['y'] += p['dy']
-        p['life'] -= 1
-        if p['life'] <= 0:
-            global_particles.remove(p)
-
-    # Draw UI
-    health_text = font.render(f"Health: {player.health}/{player.max_health}", True, WHITE)
-    score_text = font.render(f"Score: {score}", True, WHITE)
-    planes_destroyed_text = font.render(f"Planes destroyed: {planes_destroyed}", True, WHITE)
-    missile_text = font.render(f"Missiles: {player.missiles}/{player.max_missiles}", True, (0, 255, 255))
-    screen.blit(health_text, (10, 10))
-    screen.blit(score_text, (10, 50))
-    screen.blit(planes_destroyed_text, (10, 90))
-    screen.blit(missile_text, (10, 130))
-
-    # Show recharge progress if not full
-    # if player.missiles < player.max_missiles:
-    #     recharge_pct = player.missile_recharge_timer / player.missile_recharge_delay
-    #     pygame.draw.rect(screen, (0, 100, 100), (120, 140, 100 * recharge_pct, 5))
-
-    # Draw control scheme indicator
-    control_text = font.render("Controls: MOUSE" if player.mouse_control else "Controls: KEYBOARD", 
-                            True, (200, 200, 255))
-    screen.blit(control_text, (WIDTH - control_text.get_width() - 10, 10))
-    # Draw toggle hint
-    hint_text = font.render("Press M to toggle controls", True, (200, 200, 200))
-    screen.blit(hint_text, (WIDTH - hint_text.get_width() - 10, 40))
-
-    # Add new pause/shop hint below (with 10px spacing)
-    pause_hint = font.render("Press P to Pause/Shop", True, (200, 200, 200))
-    screen.blit(pause_hint, (WIDTH - pause_hint.get_width() - 10, 70))  # 40 + 30 (hint height + spacing)
-
-    # Draw state overlays
-    if game_state == "paused":
-        draw_pause_screen()
-    elif game_state == "shop":
-        draw_shop()
-    elif game_state == "game_over":
-        game_over = True
-
-    # 5. Death and Game Over Handling
-    if player.dead:
-        # Update death animation and check if it completed
-        death_complete = player.update(keys)  # This now returns True when animation finishes
+    def draw_main_menu(self):
+        if bg_img:
+            screen.blit(bg_img, (0, 0))
+        else:
+            screen.fill(BLACK)
         
-        if death_complete and not game_over:
-            game_state = "game_over"
-            game_over = True
-            game_over_time = pygame.time.get_ticks()
-            # Clear all game objects
-            enemies.clear()
-            enemy_bullets.clear()
-            player.bullets.clear()
-            # Play game over sound if available
-            if has_sound:
-                explosion_sound.play()
-
-    if game_state == "game_over":
-        # Draw game over overlay (semi-transparent)
-        overlay = pygame.Surface((WIDTH, HEIGHT), pygame.SRCALPHA)
-        overlay.fill((0, 0, 0, 180))  # Semi-transparent black
-        screen.blit(overlay, (0, 0))
+        title = self.title_font.render("PLANE SHOOTER", True, WHITE)
+        title_rect = title.get_rect(center=(WIDTH//2, HEIGHT//4))
+        screen.blit(title, title_rect)
         
-        # Show game over text
-        texts = [
-            font.render("GAME OVER", True, WHITE),
-            font.render(f"Score: {score}", True, WHITE),
-            font.render(f"Planes destroyed: {planes_destroyed}", True, WHITE),
-            font.render("Press R to restart", True, WHITE),
-            font.render("Press ESC to quit", True, WHITE),
+        buttons = [
+            {"text": "Start Game", "action": GameState.PLAYING},
+            {"text": "Shop", "action": GameState.SHOP},
+            {"text": "Quit", "action": "quit"}
         ]
         
-        for i, text in enumerate(texts):
-            screen.blit(text, (WIDTH//2 - text.get_width()//2, HEIGHT//2 - 50 + i*40))
+        for i, button in enumerate(buttons):
+            y_pos = HEIGHT//2 + i * 70
+            if self.draw_button(button["text"], WIDTH//2 - 100, y_pos, 200, 50, GRAY, LIGHT_GRAY):
+                if button["action"] == "quit":
+                    pygame.quit()
+                    sys.exit()
+                else:
+                    self.state = button["action"]
+                    if self.state == GameState.PLAYING:
+                        self.reset_game()
         
-    # 6. Refresh Screen
-    pygame.display.flip()
-    clock.tick(60)
+        # Draw player stats
+        stats = [
+            f"Player: {self.player_name}",
+            f"High Score: {self.score}",
+            f"Planes Destroyed: {self.planes_destroyed}"
+        ]
+        
+        for i, stat in enumerate(stats):
+            text = self.font.render(stat, True, WHITE)
+            screen.blit(text, (WIDTH//2 - text.get_width()//2, HEIGHT - 150 + i * 30))
+        
+        pygame.display.flip()
+        
+    def draw_shop(self):
+        if bg_img:
+            screen.blit(bg_img, (0, 0))
+        else:
+            screen.fill(BLACK)
+            
+        # Semi-transparent overlay
+        overlay = pygame.Surface((WIDTH, HEIGHT), pygame.SRCALPHA)
+        overlay.fill((0, 0, 0, 180))
+        screen.blit(overlay, (0, 0))
+        
+        title = self.title_font.render("UPGRADE SHOP", True, YELLOW)
+        screen.blit(title, (WIDTH//2 - title.get_width()//2, 50))
+        
+        # Player stats
+        stats = [
+            f"Score: {self.score}",
+            f"Health: {self.player.max_health} (+10: {self.player.upgrade_cost_health})",
+            f"Fire Rate: {60/self.player.shoot_delay:.1f} shots/sec (+1: {self.player.upgrade_cost_firerate})"
+        ]
+        
+        for i, stat in enumerate(stats):
+            text = self.font.render(stat, True, WHITE)
+            screen.blit(text, (WIDTH//2 - 200, 150 + i * 40))
+        
+        # Upgrade buttons
+        buttons = [
+            {"text": f"Upgrade Health ({self.player.upgrade_cost_health})", 
+             "action": "upgrade_health", 
+             "enabled": self.score >= self.player.upgrade_cost_health},
+            {"text": f"Upgrade Fire Rate ({self.player.upgrade_cost_firerate})", 
+             "action": "upgrade_firerate", 
+             "enabled": self.score >= self.player.upgrade_cost_firerate},
+            {"text": "Back to Menu", "action": GameState.MAIN_MENU, "enabled": True}
+        ]
+        
+        for i, button in enumerate(buttons):
+            y_pos = 300 + i * 70
+            color = LIGHT_GRAY if button["enabled"] else GRAY
+            if self.draw_button(button["text"], WIDTH//2 - 150, y_pos, 300, 50, color, WHITE if button["enabled"] else GRAY):
+                if button["action"] == "upgrade_health" and button["enabled"]:
+                    self.score -= self.player.upgrade_cost_health
+                    self.player.max_health += 10
+                    self.player.health = self.player.max_health
+                    self.player.upgrade_cost_health += 50
+                    self.save_game()
+                elif button["action"] == "upgrade_firerate" and button["enabled"]:
+                    self.score -= self.player.upgrade_cost_firerate
+                    self.player.shoot_delay = max(5, self.player.shoot_delay - 3)
+                    self.player.upgrade_cost_firerate += 75
+                    self.save_game()
+                elif isinstance(button["action"], GameState):
+                    self.state = button["action"]
+        
+        pygame.display.flip()
+        
+    def draw_button(self, text, x, y, width, height, inactive_color, active_color):
+        mouse_pos = pygame.mouse.get_pos()
+        clicked = pygame.mouse.get_pressed()[0] == 1
+        
+        if x < mouse_pos[0] < x + width and y < mouse_pos[1] < y + height:
+            pygame.draw.rect(screen, active_color, (x, y, width, height))
+            if clicked:
+                return True
+        else:
+            pygame.draw.rect(screen, inactive_color, (x, y, width, height))
+        
+        text_surf = self.font.render(text, True, BLACK)
+        text_rect = text_surf.get_rect(center=(x + width/2, y + height/2))
+        screen.blit(text_surf, text_rect)
+        return False
+        
+    def draw_pause_menu(self):
+        overlay = pygame.Surface((WIDTH, HEIGHT), pygame.SRCALPHA)
+        overlay.fill((0, 0, 0, 180))
+        screen.blit(overlay, (0, 0))
+        
+        title = self.title_font.render("PAUSED", True, WHITE)
+        screen.blit(title, (WIDTH//2 - title.get_width()//2, HEIGHT//3))
+        
+        buttons = [
+            {"text": "Resume", "action": GameState.PLAYING},
+            {"text": "Main Menu", "action": GameState.MAIN_MENU},
+            {"text": "Quit", "action": "quit"}
+        ]
+        
+        for i, button in enumerate(buttons):
+            y_pos = HEIGHT//2 + i * 70
+            if self.draw_button(button["text"], WIDTH//2 - 100, y_pos, 200, 50, GRAY, LIGHT_GRAY):
+                if button["action"] == "quit":
+                    pygame.quit()
+                    sys.exit()
+                else:
+                    self.state = button["action"]
+        
+        pygame.display.flip()
+        
+    def draw_game_over(self):
+        overlay = pygame.Surface((WIDTH, HEIGHT), pygame.SRCALPHA)
+        overlay.fill((0, 0, 0, 180))
+        screen.blit(overlay, (0, 0))
+        
+        title = self.title_font.render("GAME OVER", True, RED)
+        screen.blit(title, (WIDTH//2 - title.get_width()//2, HEIGHT//3))
+        
+        stats = [
+            f"Score: {self.score}",
+            f"Planes Destroyed: {self.planes_destroyed}",
+            f"Max Health: {self.player.max_health}",
+            f"Fire Rate: {60/self.player.shoot_delay:.1f} shots/sec"
+        ]
+        
+        for i, stat in enumerate(stats):
+            text = self.font.render(stat, True, WHITE)
+            screen.blit(text, (WIDTH//2 - text.get_width()//2, HEIGHT//2 + i * 30))
+        
+        buttons = [
+            {"text": "Play Again", "action": GameState.PLAYING},
+            {"text": "Shop", "action": GameState.SHOP},
+            {"text": "Main Menu", "action": GameState.MAIN_MENU},
+            {"text": "Quit", "action": "quit"}
+        ]
+        
+        for i, button in enumerate(buttons):
+            y_pos = HEIGHT - 200 + i * 70
+            if self.draw_button(button["text"], WIDTH//2 - 100, y_pos, 200, 50, GRAY, LIGHT_GRAY):
+                if button["action"] == "quit":
+                    pygame.quit()
+                    sys.exit()
+                else:
+                    self.state = button["action"]
+                    if self.state == GameState.PLAYING:
+                        self.reset_game()
+        
+        pygame.display.flip()
+        
+    def check_collisions(self):
+        # Player bullets hit enemies
+        for bullet in self.player.bullets[:]:
+            for enemy in self.enemies[:]:
+                if bullet.rect.colliderect(enemy.rect) and not enemy.dead:
+                    enemy.health -= bullet.damage
+                    
+                    if enemy.health <= 0:
+                        enemy.create_death_particles()
+                        global_particles.extend(enemy.death_particles)
+                        self.player.bullets.remove(bullet)
+                        self.enemies.remove(enemy)
+                        self.score += 1 * enemy.max_health
+                        self.planes_destroyed += 1
+                        if has_sound:
+                            explosion_sound.play()
+                    else:
+                        self.player.bullets.remove(bullet)
+                        for _ in range(3):
+                            enemy.death_particles.append({
+                                'x': bullet.rect.centerx,
+                                'y': bullet.rect.centery,
+                                'dx': random.uniform(-1, 1),
+                                'dy': random.uniform(-1, 1),
+                                'size': random.randint(1, 2),
+                                'life': random.randint(5, 10),
+                                'color': (255, random.randint(100, 200), 0)
+                            })
+                        if has_sound:
+                            shoot_sound.play()
+                    break
 
-# Clean exit
-if has_sound:
-    pygame.mixer.music.stop()
-pygame.quit()
-sys.exit()
+        # Enemy collision with player
+        for enemy in self.enemies[:]:
+            if not self.player.invulnerable and not enemy.dead and self.player.rect.colliderect(enemy.rect):
+                if self.player.health > 0:
+                    self.player.health = 0
+                    self.player.init_death_effect()
+                    if has_sound:
+                        explosion_sound.play()
+                break
+
+    def handle_events(self):
+        for event in pygame.event.get():
+            if event.type == pygame.QUIT:
+                self.save_game()
+                pygame.quit()
+                sys.exit()
+                
+            if event.type == pygame.KEYDOWN:
+                if event.key == pygame.K_ESCAPE:
+                    if self.state == GameState.SHOP:
+                        self.state = GameState.MAIN_MENU
+                    elif self.state == GameState.PLAYING:
+                        self.state = GameState.PAUSED
+                    elif self.state == GameState.PAUSED:
+                        self.state = GameState.PLAYING
+                    elif self.state == GameState.GAME_OVER:
+                        self.state = GameState.MAIN_MENU
+                
+                if event.key == pygame.K_p and self.state == GameState.PLAYING:
+                    self.state = GameState.PAUSED
+                
+                if event.key == pygame.K_m:
+                    self.player.mouse_control = not self.player.mouse_control
+                
+                if event.key == pygame.K_e and self.state == GameState.PLAYING:
+                    missile = self.player.fire_missile(self.enemies)
+                    if missile:
+                        self.player.bullets.append(missile)
+            
+            if event.type == pygame.MOUSEBUTTONDOWN and self.player.mouse_control and self.state == GameState.PLAYING:
+                if event.button == 1:  # Left mouse button
+                    self.player.mouse_button_down = True
+                elif event.button == 3:  # Right mouse button
+                    missile = self.player.fire_missile(self.enemies)
+                    if missile:
+                        self.player.bullets.append(missile)
+            
+            if event.type == pygame.MOUSEBUTTONUP and self.player.mouse_control and self.state == GameState.PLAYING:
+                if event.button == 1:  # Left mouse button
+                    self.player.mouse_button_down = False
+
+    def update_game(self):
+        keys = pygame.key.get_pressed()
+        mouse_pos = pygame.mouse.get_pos()
+        
+        if self.state == GameState.PLAYING and not self.player.dead:
+            # Update player
+            death_complete = self.player.update(keys, mouse_pos)
+            if death_complete:
+                self.state = GameState.GAME_OVER
+                self.save_game()
+            
+            # Spawn enemies
+            self.enemy_spawn_timer += 1
+            if self.enemy_spawn_timer > 120:
+                enemy_type = random.choices([1, 2, 3, 4, 5, 6, 7], weights=[20, 30, 20, 10, 10, 7, 7], k=1)[0]
+                if enemy_type == 1:
+                    self.enemies.append(Enemy1())
+                elif enemy_type == 2:
+                    self.enemies.append(Enemy2())
+                elif enemy_type == 3:
+                    self.enemies.append(Enemy3())
+                elif enemy_type == 4:
+                    self.enemies.append(Enemy4())
+                elif enemy_type == 5:
+                    self.enemies.append(Enemy5())
+                elif enemy_type == 6:
+                    self.enemies.append(Enemy6())
+                else:
+                    self.enemies.append(Enemy7())
+                self.enemy_spawn_timer = 0
+
+            # Update player bullets
+            for bullet in self.player.bullets[:]:
+                if isinstance(bullet, PlayerHomingMissile):
+                    if not bullet.update(self.enemies):
+                        self.player.bullets.remove(bullet)
+                else:
+                    bullet.update()
+                    if bullet.x > WIDTH:
+                        self.player.bullets.remove(bullet)
+
+            # Update enemies
+            for enemy in self.enemies[:]:
+                enemy.update()
+                if (enemy.x < -100) or (enemy.x > WIDTH + 100):
+                    self.enemies.remove(enemy)
+                    continue
+                if not enemy.dead:
+                    if enemy.type == 4:
+                        if enemy.should_shoot(self.player):
+                            self.enemy_bullets.append(enemy.shoot(self.player.x, self.player.y))
+                    elif enemy.type == 6:
+                        if enemy.should_shoot():
+                            bullet = enemy.shoot()
+                            if bullet:
+                                self.enemy_bullets.append(bullet)
+                    elif enemy.type == 7:
+                        if enemy.should_drop_bomb():
+                            bomb = enemy.drop_bomb()
+                            self.enemy_bullets.append(bomb)
+                    else:
+                        if enemy.should_shoot():
+                            self.enemy_bullets.append(enemy.shoot())
+
+            # Update enemy bullets
+            i = 0
+            while i < len(self.enemy_bullets):
+                bullet = self.enemy_bullets[i]
+                remove_bullet = False
+                if isinstance(bullet, EnemyHomingMissile):
+                    if not bullet.update(self.player.x, self.player.y):
+                        remove_bullet = True
+                    elif (bullet.x < -50 or bullet.x > WIDTH + 50 or
+                          bullet.y < -50 or bullet.y > HEIGHT + 50):
+                        remove_bullet = True
+                elif isinstance(bullet, Bomb):
+                    if not bullet.update():
+                        remove_bullet = True
+                else:
+                    bullet.update()
+                    if bullet.x < 0:
+                        remove_bullet = True
+                if not remove_bullet and bullet.rect.colliderect(self.player.rect):
+                    remove_bullet = True
+                    if not self.player.invulnerable:
+                        self.player.health -= bullet.damage
+                        if self.player.health <= 0:
+                            self.player.health = 0
+                            self.player.init_death_effect()
+                        else:
+                            self.player.flash()
+                        if has_sound:
+                            explosion_sound.play()
+                if remove_bullet:
+                    self.enemy_bullets.pop(i)
+                else:
+                    i += 1
+
+            self.check_collisions()
+
+    def draw_game(self):
+        if bg_img:
+            screen.blit(bg_img, (0, 0))
+        else:
+            screen.fill(BLACK)
+
+        # Draw bullets
+        for bullet in self.player.bullets:
+            bullet.draw()
+        for bullet in self.enemy_bullets:
+            bullet.draw()
+
+        # Draw enemies
+        for enemy in self.enemies:
+            enemy.draw(screen)
+            enemy.draw_particles(screen)
+
+        # Draw player
+        self.player.draw(screen)
+        self.player.draw_hit_particles(screen)
+
+        # Draw particles
+        for p in global_particles[:]:
+            pygame.draw.circle(screen, p['color'], (int(p['x']), int(p['y'])), p['size'])
+            p['x'] += p['dx']
+            p['y'] += p['dy']
+            p['life'] -= 1
+            if p['life'] <= 0:
+                global_particles.remove(p)
+
+        # Draw UI
+        health_text = self.font.render(f"Health: {self.player.health}/{self.player.max_health}", True, WHITE)
+        score_text = self.font.render(f"Score: {self.score}", True, WHITE)
+        planes_text = self.font.render(f"Planes: {self.planes_destroyed}", True, WHITE)
+        missile_text = self.font.render(f"Missiles: {self.player.missiles}/{self.player.max_missiles}", True, (0, 255, 255))
+        screen.blit(health_text, (10, 10))
+        screen.blit(score_text, (10, 50))
+        screen.blit(planes_text, (10, 90))
+        screen.blit(missile_text, (10, 130))
+
+        control_text = self.font.render("Controls: MOUSE" if self.player.mouse_control else "Controls: KEYBOARD", 
+                                True, (200, 200, 255))
+        screen.blit(control_text, (WIDTH - control_text.get_width() - 10, 10))
+        
+        pause_text = self.font.render("Press P to Pause", True, (200, 200, 200))
+        screen.blit(pause_text, (WIDTH - pause_text.get_width() - 10, 40))
+
+        pygame.display.flip()
+
+    def run(self):
+        while True:
+            self.handle_events()
+            
+            if self.state == GameState.MAIN_MENU:
+                self.draw_main_menu()
+            elif self.state == GameState.PLAYING:
+                self.update_game()
+                self.draw_game()
+            elif self.state == GameState.PAUSED:
+                self.draw_pause_menu()
+            elif self.state == GameState.SHOP:
+                self.draw_shop()
+            elif self.state == GameState.GAME_OVER:
+                self.draw_game_over()
+            
+            self.clock.tick(60)
+
+# Start the game
+if __name__ == "__main__":
+    game = Game()
+    game.run()
