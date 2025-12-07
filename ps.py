@@ -1,4 +1,4 @@
-#Trying game state management - 2
+#Trying game state management - 3 working
 import pygame
 import random
 import sys
@@ -1036,7 +1036,11 @@ class Game:
         self.instruction_font = pygame.font.SysFont(None, 24)
         self.pakts_font = pygame.font.SysFont(None, 50)
         self.player_name = "Player1"
+        self.mouse_pos = (0, 0)
+        self.mouse_clicked = False
+        self.active_button = None
         self.save_file = "savegame.json"
+        
         self.load_game()
         
     def load_game(self):
@@ -1140,51 +1144,46 @@ class Game:
             screen.blit(text, (WIDTH//2 - 200, 150 + i * 40))
         
         # Upgrade buttons
-        buttons = [
-            {"text": f"Upgrade Health ({self.player.upgrade_cost_health})", 
-            "action": "upgrade_health", 
-            "enabled": self.score >= self.player.upgrade_cost_health},
-            {"text": f"Upgrade Fire Rate ({self.player.upgrade_cost_firerate})", 
-            "action": "upgrade_firerate", 
-            "enabled": self.score >= self.player.upgrade_cost_firerate},
-            {"text": "Back to Menu", "action": GameState.MAIN_MENU, "enabled": True}
-        ]
-
-        for i, button in enumerate(buttons):
-            y_pos = 300 + i * 70
-            color = LIGHT_GRAY if button["enabled"] else GRAY
-            if self.draw_button(button["text"], WIDTH//2 - 150, y_pos, 300, 50, color, WHITE if button["enabled"] else GRAY):
-                if button["action"] == "upgrade_health" and button["enabled"]:
-                    self.score -= self.player.upgrade_cost_health
-                    self.player.max_health += 10
-                    self.player.health = self.player.max_health
-                    self.player.upgrade_cost_health += 50
-                    self.save_game()
-                elif button["action"] == "upgrade_firerate" and button["enabled"]:
-                    self.score -= self.player.upgrade_cost_firerate
-                    self.player.shoot_delay = max(5, self.player.shoot_delay - 3)
-                    self.player.upgrade_cost_firerate += 75
-                    self.save_game()
-                elif isinstance(button["action"], GameState):
-                    self.state = button["action"]
+        upgrade_health_clicked = self.draw_button(
+            f"Upgrade Health ({self.player.upgrade_cost_health})", 
+            WIDTH//2 - 150, 300, 300, 50, 
+            LIGHT_GRAY if self.score >= self.player.upgrade_cost_health else GRAY,
+            WHITE if self.score >= self.player.upgrade_cost_health else GRAY
+        )
+        
+        upgrade_firerate_clicked = self.draw_button(
+            f"Upgrade Fire Rate ({self.player.upgrade_cost_firerate})", 
+            WIDTH//2 - 150, 370, 300, 50, 
+            LIGHT_GRAY if self.score >= self.player.upgrade_cost_firerate else GRAY,
+            WHITE if self.score >= self.player.upgrade_cost_firerate else GRAY
+        )
+        
+        back_clicked = self.draw_button(
+            "Back to Menu", 
+            WIDTH//2 - 150, 440, 300, 50, 
+            LIGHT_GRAY, WHITE
+        )
+        
+        # Return button states to be handled in update
+        return {
+            'upgrade_health': upgrade_health_clicked,
+            'upgrade_firerate': upgrade_firerate_clicked,
+            'back': back_clicked
+        }
         
         pygame.display.flip()
         
     def draw_button(self, text, x, y, width, height, inactive_color, active_color):
-        mouse_pos = pygame.mouse.get_pos()
-        clicked = pygame.mouse.get_pressed()[0] == 1
+        mouse_over = x < self.mouse_pos[0] < x + width and y < self.mouse_pos[1] < y + height
         
-        if x < mouse_pos[0] < x + width and y < mouse_pos[1] < y + height:
-            pygame.draw.rect(screen, active_color, (x, y, width, height))
-            if clicked:
-                return True
-        else:
-            pygame.draw.rect(screen, inactive_color, (x, y, width, height))
+        color = active_color if mouse_over else inactive_color
+        pygame.draw.rect(screen, color, (x, y, width, height))
         
         text_surf = self.font.render(text, True, BLACK)
         text_rect = text_surf.get_rect(center=(x + width/2, y + height/2))
         screen.blit(text_surf, text_rect)
-        return False
+        
+        return mouse_over and self.mouse_clicked
         
     def draw_pause_menu(self):
         overlay = pygame.Surface((WIDTH, HEIGHT), pygame.SRCALPHA)
@@ -1302,31 +1301,32 @@ class Game:
                 break
 
     def handle_events(self):
+        self.mouse_clicked = False  # Reset click state each frame
+        
         for event in pygame.event.get():
             if event.type == pygame.QUIT:
                 self.state = GameState.QUIT
                 
             if event.type == pygame.KEYDOWN:
                 if event.key == pygame.K_ESCAPE:
-                    if self.state == GameState.PLAYING:
-                        self.state = GameState.PAUSED
-                    elif self.state == GameState.PAUSED:
-                        self.state = GameState.PLAYING
-                    elif self.state == GameState.GAME_OVER:
-                        self.state = GameState.MAIN_MENU
-                    elif self.state == GameState.SHOP:
-                        self.state = GameState.MAIN_MENU
-                
+                    self.handle_escape_key()
+                    
                 if event.key == pygame.K_p and self.state == GameState.PLAYING:
                     self.state = GameState.PAUSED
-                
+                    
                 if event.key == pygame.K_m:
                     self.player.mouse_control = not self.player.mouse_control
-                
+                    
                 if event.key == pygame.K_e and self.state == GameState.PLAYING:
                     missile = self.player.fire_missile(self.enemies)
                     if missile:
                         self.player.bullets.append(missile)
+                        
+            if event.type == pygame.MOUSEMOTION:
+                self.mouse_pos = event.pos
+                
+            if event.type == pygame.MOUSEBUTTONDOWN and event.button == 1:
+                self.mouse_clicked = True
 
     def handle_escape_key(self):
         if self.state == GameState.SHOP:
@@ -1511,41 +1511,27 @@ class Game:
             screen.blit(text, (WIDTH//2 - text.get_width()//2, HEIGHT//3 + 50 + i * 40))
         
         # Buttons
-        buttons = [
-            {"text": "Play Again", "action": GameState.PLAYING, "reset": True, "rect": pygame.Rect(WIDTH//2 - 100, HEIGHT//2 + 100, 200, 50)},
-            {"text": "Main Menu", "action": GameState.MAIN_MENU, "rect": pygame.Rect(WIDTH//2 - 100, HEIGHT//2 + 170, 200, 50)},
-            {"text": "Quit", "action": GameState.QUIT, "rect": pygame.Rect(WIDTH//2 - 100, HEIGHT//2 + 240, 200, 50)}
-        ]
+        # Draw buttons and return their states
+        play_again_clicked = self.draw_button(
+            "Play Again", WIDTH//2 - 100, HEIGHT//2 + 100, 200, 50, LIGHT_GRAY, WHITE
+        )
+        menu_clicked = self.draw_button(
+            "Main Menu", WIDTH//2 - 100, HEIGHT//2 + 170, 200, 50, LIGHT_GRAY, WHITE
+        )
+        quit_clicked = self.draw_button(
+            "Quit", WIDTH//2 - 100, HEIGHT//2 + 240, 200, 50, LIGHT_GRAY, WHITE
+        )
         
-        mouse_pos = pygame.mouse.get_pos()
-        mouse_clicked = False
-        
-        for event in pygame.event.get():
-            if event.type == pygame.MOUSEBUTTONDOWN and event.button == 1:
-                mouse_clicked = True
-        
-        for button in buttons:
-            # Draw button
-            color = LIGHT_GRAY if button["rect"].collidepoint(mouse_pos) else GRAY
-            pygame.draw.rect(screen, color, button["rect"])
-            pygame.draw.rect(screen, BLACK, button["rect"], 2)
-            
-            # Draw button text
-            text = self.font.render(button["text"], True, BLACK)
-            text_rect = text.get_rect(center=button["rect"].center)
-            screen.blit(text, text_rect)
-            
-            # Handle click
-            if mouse_clicked and button["rect"].collidepoint(mouse_pos):
-                if button.get("reset", False):
-                    self.reset_game()
-                self.state = button["action"]
-                pygame.time.delay(200)  # Prevent instant triggering
-                return
+        return {
+            'play_again': play_again_clicked,
+            'menu': menu_clicked,
+            'quit': quit_clicked
+        }
 
     def run(self):
         running = True
         while running:
+            # Handle all events
             self.handle_events()
             
             if self.state == GameState.QUIT:
@@ -1558,27 +1544,42 @@ class Game:
             else:
                 screen.fill(BLACK)
             
-            # Draw the appropriate screen
+            # Draw the appropriate screen and handle button clicks
             if self.state == GameState.MAIN_MENU:
                 self.draw_main_menu()
             elif self.state == GameState.PLAYING:
                 self.update_game()
                 self.draw_game()
             elif self.state == GameState.PAUSED:
-                self.draw_game()  # Draw game first
-                self.draw_pause_menu()  # Then overlay pause
+                self.draw_game()
+                self.draw_pause_menu()
             elif self.state == GameState.SHOP:
-                self.draw_shop()
+                button_states = self.draw_shop()
+                if button_states['upgrade_health'] and self.score >= self.player.upgrade_cost_health:
+                    self.score -= self.player.upgrade_cost_health
+                    self.player.max_health += 10
+                    self.player.health = self.player.max_health
+                    self.player.upgrade_cost_health += 50
+                    self.save_game()
+                elif button_states['upgrade_firerate'] and self.score >= self.player.upgrade_cost_firerate:
+                    self.score -= self.player.upgrade_cost_firerate
+                    self.player.shoot_delay = max(5, self.player.shoot_delay - 3)
+                    self.player.upgrade_cost_firerate += 75
+                    self.save_game()
+                elif button_states['back']:
+                    self.state = GameState.MAIN_MENU
             elif self.state == GameState.GAME_OVER:
-                self.draw_game()  # Draw game first
-                self.draw_game_over()  # Then overlay game over
+                button_states = self.draw_game_over()
+                if button_states['play_again']:
+                    self.reset_game()
+                    self.state = GameState.PLAYING
+                elif button_states['menu']:
+                    self.state = GameState.MAIN_MENU
+                elif button_states['quit']:
+                    self.state = GameState.QUIT
             
             pygame.display.flip()
             self.clock.tick(60)
-        
-        self.save_game()
-        pygame.quit()
-        sys.exit()
 
 # Start the game
 if __name__ == "__main__":
