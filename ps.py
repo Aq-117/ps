@@ -1,4 +1,4 @@
-#Trying game state management - 3 working
+#Mid progress for proper shop management and player upgrades saving
 import pygame
 import random
 import sys
@@ -1040,45 +1040,75 @@ class Game:
         self.mouse_clicked = False
         self.active_button = None
         self.save_file = "savegame.json"
-        
-        self.load_game()
+        self.save_data = {
+            "player_name": "Player1",
+            "high_score": 0,
+            "total_planes_destroyed": 0,
+            "upgrades": {
+                "max_health": 100,
+                "shoot_delay": 15,
+                "health_upgrade_cost": 100,
+                "firerate_upgrade_cost": 150
+            }
+        }
+        self.load_game()  
         
     def load_game(self):
         try:
             with open(self.save_file, "r") as f:
                 data = json.load(f)
-                self.player_name = data.get("player_name", "Player1")
-                self.score = data.get("score", 0)
-                self.planes_destroyed = data.get("planes_destroyed", 0)
-                self.player.max_health = data.get("max_health", 100)
+                self.save_data.update(data)
+                
+                # Apply loaded data
+                self.player_name = self.save_data["player_name"]
+                self.score = 0  # Reset current score, keep high score
+                self.planes_destroyed = 0  # Reset current session, keep total
+                
+                # Apply upgrades
+                self.player.max_health = self.save_data["upgrades"]["max_health"]
                 self.player.health = self.player.max_health
-                self.player.shoot_delay = data.get("shoot_delay", 15)
-                self.player.upgrade_cost_health = data.get("upgrade_cost_health", 100)
-                self.player.upgrade_cost_firerate = data.get("upgrade_cost_firerate", 150)
+                self.player.shoot_delay = self.save_data["upgrades"]["shoot_delay"]
+                self.player.upgrade_cost_health = self.save_data["upgrades"]["health_upgrade_cost"]
+                self.player.upgrade_cost_firerate = self.save_data["upgrades"]["firerate_upgrade_cost"]
+                
         except FileNotFoundError:
-            self.reset_game()
+            print("No save file found, using defaults")
+            self.save_game()  # Create initial save file
+        except Exception as e:
+            print(f"Error loading save file: {e}")
+            self.save_game()  # Recreate corrupt save file
             
     def save_game(self):
-        data = {
+        self.save_data = {
             "player_name": self.player_name,
-            "score": self.score,
-            "planes_destroyed": self.planes_destroyed,
-            "max_health": self.player.max_health,
-            "shoot_delay": self.player.shoot_delay,
-            "upgrade_cost_health": self.player.upgrade_cost_health,
-            "upgrade_cost_firerate": self.player.upgrade_cost_firerate
+            "high_score": max(self.score, self.save_data.get("high_score", 0)),
+            "total_planes_destroyed": self.planes_destroyed + self.save_data.get("total_planes_destroyed", 0),
+            "upgrades": {
+                "max_health": self.player.max_health,
+                "shoot_delay": self.player.shoot_delay,
+                "health_upgrade_cost": self.player.upgrade_cost_health,
+                "firerate_upgrade_cost": self.player.upgrade_cost_firerate
+            }
         }
-        with open(self.save_file, "w") as f:
-            json.dump(data, f)
+        
+        try:
+            with open(self.save_file, "w") as f:
+                json.dump(self.save_data, f, indent=4)
+        except Exception as e:
+            print(f"Failed to save game: {e}")
             
     def reset_game(self):
+        # Reset current session stats but keep upgrades
         self.player.reset()
+        self.player.max_health = self.save_data["upgrades"]["max_health"]
+        self.player.health = self.player.max_health
+        self.player.shoot_delay = self.save_data["upgrades"]["shoot_delay"]
         self.enemies = []
         self.enemy_bullets = []
         self.player_bullets = []
         self.enemy_spawn_timer = 0
         self.score = 0
-        self.planes_destroyed = 0
+        self.planes_destroyed = 0  # Note: total_planes_destroyed is preserved in save_data
         
     def draw_main_menu(self):
         if bg_img:
@@ -1144,35 +1174,46 @@ class Game:
             screen.blit(text, (WIDTH//2 - 200, 150 + i * 40))
         
         # Upgrade buttons
-        upgrade_health_clicked = self.draw_button(
+        # upgrade_health_text = f"Health: {self.player.max_health} (+10: {self.player.upgrade_cost_health})"
+        # upgrade_firerate_text = f"Fire Rate: {60/self.player.shoot_delay:.1f} shots/sec (+1: {self.player.upgrade_cost_firerate})"
+        
+        # Initialize button_states with default False values
+        button_states = {
+            'upgrade_health': False,
+            'upgrade_firerate': False,
+            'back': False
+        }
+        
+        # Update button states based on actual clicks
+        button_states = {
+            'upgrade_health': False,
+            'upgrade_firerate': False,
+            'back': False
+        }
+    
+        # Check each button and update states
+        button_states['upgrade_health'] = self.draw_button(
             f"Upgrade Health ({self.player.upgrade_cost_health})", 
-            WIDTH//2 - 150, 300, 300, 50, 
+            WIDTH//2 - 150, 300, 300, 50,
             LIGHT_GRAY if self.score >= self.player.upgrade_cost_health else GRAY,
             WHITE if self.score >= self.player.upgrade_cost_health else GRAY
         )
         
-        upgrade_firerate_clicked = self.draw_button(
+        button_states['upgrade_firerate'] = self.draw_button(
             f"Upgrade Fire Rate ({self.player.upgrade_cost_firerate})", 
-            WIDTH//2 - 150, 370, 300, 50, 
+            WIDTH//2 - 150, 370, 300, 50,
             LIGHT_GRAY if self.score >= self.player.upgrade_cost_firerate else GRAY,
             WHITE if self.score >= self.player.upgrade_cost_firerate else GRAY
         )
         
-        back_clicked = self.draw_button(
+        button_states['back'] = self.draw_button(
             "Back to Menu", 
-            WIDTH//2 - 150, 440, 300, 50, 
+            WIDTH//2 - 150, 440, 300, 50,
             LIGHT_GRAY, WHITE
         )
         
-        # Return button states to be handled in update
-        return {
-            'upgrade_health': upgrade_health_clicked,
-            'upgrade_firerate': upgrade_firerate_clicked,
-            'back': back_clicked
-        }
-        
-        pygame.display.flip()
-        
+        return button_states
+                
     def draw_button(self, text, x, y, width, height, inactive_color, active_color):
         mouse_over = x < self.mouse_pos[0] < x + width and y < self.mouse_pos[1] < y + height
         
@@ -1511,22 +1552,25 @@ class Game:
             screen.blit(text, (WIDTH//2 - text.get_width()//2, HEIGHT//3 + 50 + i * 40))
         
         # Buttons
-        # Draw buttons and return their states
-        play_again_clicked = self.draw_button(
+        # Initialize button states
+        game_over_button_states = {
+            'play_again': False,
+            'menu': False,
+            'quit': False
+        }
+        
+        # Update button states
+        game_over_button_states['play_again'] = self.draw_button(
             "Play Again", WIDTH//2 - 100, HEIGHT//2 + 100, 200, 50, LIGHT_GRAY, WHITE
         )
-        menu_clicked = self.draw_button(
+        game_over_button_states['menu'] = self.draw_button(
             "Main Menu", WIDTH//2 - 100, HEIGHT//2 + 170, 200, 50, LIGHT_GRAY, WHITE
         )
-        quit_clicked = self.draw_button(
+        game_over_button_states['quit'] = self.draw_button(
             "Quit", WIDTH//2 - 100, HEIGHT//2 + 240, 200, 50, LIGHT_GRAY, WHITE
         )
         
-        return {
-            'play_again': play_again_clicked,
-            'menu': menu_clicked,
-            'quit': quit_clicked
-        }
+        return game_over_button_states
 
     def run(self):
         running = True
@@ -1554,28 +1598,35 @@ class Game:
                 self.draw_game()
                 self.draw_pause_menu()
             elif self.state == GameState.SHOP:
-                button_states = self.draw_shop()
-                if button_states['upgrade_health'] and self.score >= self.player.upgrade_cost_health:
+                # First draw the shop and get button states
+                shop_button_states = self.draw_shop()
+                
+                # Then handle button actions
+                if shop_button_states.get('upgrade_health', False) and self.score >= self.player.upgrade_cost_health:
                     self.score -= self.player.upgrade_cost_health
                     self.player.max_health += 10
                     self.player.health = self.player.max_health
-                    self.player.upgrade_cost_health += 50
+                    self.player.upgrade_cost_health = int(self.player.upgrade_cost_health * 1.5)
                     self.save_game()
-                elif button_states['upgrade_firerate'] and self.score >= self.player.upgrade_cost_firerate:
+                    
+                elif shop_button_states.get('upgrade_firerate', False) and self.score >= self.player.upgrade_cost_firerate:
                     self.score -= self.player.upgrade_cost_firerate
                     self.player.shoot_delay = max(5, self.player.shoot_delay - 3)
-                    self.player.upgrade_cost_firerate += 75
+                    self.player.upgrade_cost_firerate = int(self.player.upgrade_cost_firerate * 1.75)
                     self.save_game()
-                elif button_states['back']:
+                    
+                elif shop_button_states.get('back', False):
                     self.state = GameState.MAIN_MENU
+                    
             elif self.state == GameState.GAME_OVER:
-                button_states = self.draw_game_over()
-                if button_states['play_again']:
+                game_over_button_states = self.draw_game_over()
+                
+                if game_over_button_states.get('play_again', False):
                     self.reset_game()
                     self.state = GameState.PLAYING
-                elif button_states['menu']:
+                elif game_over_button_states.get('menu', False):
                     self.state = GameState.MAIN_MENU
-                elif button_states['quit']:
+                elif game_over_button_states.get('quit', False):
                     self.state = GameState.QUIT
             
             pygame.display.flip()

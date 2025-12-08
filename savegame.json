@@ -1,0 +1,11 @@
+{
+    "player_name": "Player1",
+    "high_score": 0,
+    "total_planes_destroyed": 0,
+    "upgrades": {
+        "max_health": 100,
+        "shoot_delay": 15,
+        "health_upgrade_cost": 100,
+        "firerate_upgrade_cost": 150
+    }
+}
