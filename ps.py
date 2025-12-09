@@ -1,4 +1,4 @@
-#Mid progress for proper shop management and player upgrades saving
+# Made proper shop management and player upgrades saving
 import pygame
 import random
 import sys
@@ -1028,7 +1028,7 @@ class Game:
         self.enemy_bullets = []
         self.player_bullets = []
         self.enemy_spawn_timer = 0
-        self.score = 0
+        self.current_score = 0
         self.planes_destroyed = 0
         self.clock = pygame.time.Clock()
         self.font = pygame.font.SysFont(None, 36)
@@ -1039,6 +1039,7 @@ class Game:
         self.mouse_pos = (0, 0)
         self.mouse_clicked = False
         self.active_button = None
+        self.already_saved = False
         self.save_file = "savegame.json"
         self.save_data = {
             "player_name": "Player1",
@@ -1049,46 +1050,56 @@ class Game:
                 "shoot_delay": 15,
                 "health_upgrade_cost": 100,
                 "firerate_upgrade_cost": 150
-            }
+            },
+            "unspent_score": 0
         }
         self.load_game()  
         
     def load_game(self):
         try:
             with open(self.save_file, "r") as f:
-                data = json.load(f)
-                self.save_data.update(data)
+                self.save_data = json.load(f)
                 
-                # Apply loaded data
-                self.player_name = self.save_data["player_name"]
-                self.score = 0  # Reset current score, keep high score
-                self.planes_destroyed = 0  # Reset current session, keep total
-                
-                # Apply upgrades
-                self.player.max_health = self.save_data["upgrades"]["max_health"]
-                self.player.health = self.player.max_health
-                self.player.shoot_delay = self.save_data["upgrades"]["shoot_delay"]
-                self.player.upgrade_cost_health = self.save_data["upgrades"]["health_upgrade_cost"]
-                self.player.upgrade_cost_firerate = self.save_data["upgrades"]["firerate_upgrade_cost"]
-                
-        except FileNotFoundError:
-            print("No save file found, using defaults")
-            self.save_game()  # Create initial save file
-        except Exception as e:
-            print(f"Error loading save file: {e}")
-            self.save_game()  # Recreate corrupt save file
+            # Initialize all values from save data
+            self.player_name = self.save_data.get("player_name", "Player1")
+            self.current_score = 0  # Start fresh each game
+            self.planes_destroyed = 0  # Current session only
+            
+            # Load upgrades
+            upgrades = self.save_data.get("upgrades", {})
+            self.player.max_health = upgrades.get("max_health", 100)
+            self.player.health = self.player.max_health
+            self.player.shoot_delay = upgrades.get("shoot_delay", 15)
+            self.player.upgrade_cost_health = upgrades.get("health_upgrade_cost", 100)
+            self.player.upgrade_cost_firerate = upgrades.get("firerate_upgrade_cost", 150)
+            
+        except (FileNotFoundError, json.JSONDecodeError):
+            # Initialize new save data if file doesn't exist or is corrupt
+            self.save_data = {
+                "player_name": "Player1",
+                "high_score": 0,
+                "total_planes_destroyed": 0,
+                "upgrades": {
+                    "max_health": 100,
+                    "shoot_delay": 15,
+                    "health_upgrade_cost": 100,
+                    "firerate_upgrade_cost": 150
+                },
+                "unspent_score": 0
+            }
+            self.save_game()
             
     def save_game(self):
-        self.save_data = {
-            "player_name": self.player_name,
-            "high_score": max(self.score, self.save_data.get("high_score", 0)),
-            "total_planes_destroyed": self.planes_destroyed + self.save_data.get("total_planes_destroyed", 0),
-            "upgrades": {
-                "max_health": self.player.max_health,
-                "shoot_delay": self.player.shoot_delay,
-                "health_upgrade_cost": self.player.upgrade_cost_health,
-                "firerate_upgrade_cost": self.player.upgrade_cost_firerate
-            }
+        # Update high score to be max of previous high score and current session score
+        # (Don't include unspent score in high score comparison)
+        self.save_data["high_score"] = max(self.current_score, self.save_data.get("high_score", 0))
+        
+        # Always save upgrades
+        self.save_data["upgrades"] = {
+            "max_health": self.player.max_health,
+            "shoot_delay": self.player.shoot_delay,
+            "health_upgrade_cost": self.player.upgrade_cost_health,
+            "firerate_upgrade_cost": self.player.upgrade_cost_firerate
         }
         
         try:
@@ -1096,20 +1107,30 @@ class Game:
                 json.dump(self.save_data, f, indent=4)
         except Exception as e:
             print(f"Failed to save game: {e}")
-            
+
     def reset_game(self):
-        # Reset current session stats but keep upgrades
+        """Reset current game session while preserving upgrades and progress"""
+        # Reset player state but keep upgrades
         self.player.reset()
         self.player.max_health = self.save_data["upgrades"]["max_health"]
         self.player.health = self.player.max_health
         self.player.shoot_delay = self.save_data["upgrades"]["shoot_delay"]
+        
+        # Reset game state but preserve costs
+        self.player.upgrade_cost_health = self.save_data["upgrades"]["health_upgrade_cost"]
+        self.player.upgrade_cost_firerate = self.save_data["upgrades"]["firerate_upgrade_cost"]
+        
+        # Clear current session entities
         self.enemies = []
         self.enemy_bullets = []
         self.player_bullets = []
         self.enemy_spawn_timer = 0
-        self.score = 0
-        self.planes_destroyed = 0  # Note: total_planes_destroyed is preserved in save_data
         
+        # Reset only current session score, keep high score
+        self.current_score = 0  # Track current session separately
+        self.planes_destroyed = 0  # Current session only
+        self.already_saved = False  # Reset save flag
+
     def draw_main_menu(self):
         if bg_img:
             screen.blit(bg_img, (0, 0))
@@ -1118,7 +1139,7 @@ class Game:
         
         # Title with proper spacing
         title = self.title_font.render("PLANE SHOOTER", True, WHITE)
-        title_rect = title.get_rect(center=(WIDTH//2, HEIGHT//4))
+        title_rect = title.get_rect(center=(WIDTH//2, HEIGHT//4 - 70))
         screen.blit(title, title_rect)
         
         # Buttons with proper spacing
@@ -1129,25 +1150,28 @@ class Game:
         ]
         
         for i, button in enumerate(buttons):
-            y_pos = HEIGHT//2 + i * 70
+            y_pos = HEIGHT//2 - 170 + i * 70
             if self.draw_button(button["text"], WIDTH//2 - 100, y_pos, 200, 50, GRAY, LIGHT_GRAY):
                 if button.get("reset", False):
                     self.reset_game()
                 self.state = button["action"]
         
+        # New Player button at the bottom
+        if self.draw_button("New Player", WIDTH//2 - 100, HEIGHT - 100, 200, 50, RED, (255, 150, 150)):
+            self.reset_for_new_player()
+        
         # Stats with proper spacing at bottom
         stats = [
             f"Player: {self.player_name}",
-            f"High Score: {self.score}",
-            f"Planes Destroyed: {self.planes_destroyed}"
+            f"High Score: {self.save_data['high_score']}",
+            f"Total Planes Destroyed: {self.save_data['total_planes_destroyed']}",
+            f"Available Score: {self.save_data['unspent_score'] + self.current_score}"
         ]
         
         for i, stat in enumerate(stats):
             text = self.font.render(stat, True, WHITE)
-            screen.blit(text, (WIDTH//2 - text.get_width()//2, HEIGHT - 150 + i * 30))
-        
-        pygame.display.flip()
-        
+            screen.blit(text, (WIDTH//2 - text.get_width()//2, HEIGHT - 270 + i * 40))
+
     def draw_shop(self):
         if bg_img:
             screen.blit(bg_img, (0, 0))
@@ -1163,8 +1187,9 @@ class Game:
         screen.blit(title, (WIDTH//2 - title.get_width()//2, 50))
         
         # Player stats
+        total_available_score = self.save_data["unspent_score"] + self.current_score
         stats = [
-            f"Score: {self.score}",
+            f"Available Score: {total_available_score}",
             f"Health: {self.player.max_health} (+10: {self.player.upgrade_cost_health})",
             f"Fire Rate: {60/self.player.shoot_delay:.1f} shots/sec (+1: {self.player.upgrade_cost_firerate})"
         ]
@@ -1174,17 +1199,6 @@ class Game:
             screen.blit(text, (WIDTH//2 - 200, 150 + i * 40))
         
         # Upgrade buttons
-        # upgrade_health_text = f"Health: {self.player.max_health} (+10: {self.player.upgrade_cost_health})"
-        # upgrade_firerate_text = f"Fire Rate: {60/self.player.shoot_delay:.1f} shots/sec (+1: {self.player.upgrade_cost_firerate})"
-        
-        # Initialize button_states with default False values
-        button_states = {
-            'upgrade_health': False,
-            'upgrade_firerate': False,
-            'back': False
-        }
-        
-        # Update button states based on actual clicks
         button_states = {
             'upgrade_health': False,
             'upgrade_firerate': False,
@@ -1192,18 +1206,20 @@ class Game:
         }
     
         # Check each button and update states
+        total_available = self.save_data["unspent_score"] + self.current_score
+
         button_states['upgrade_health'] = self.draw_button(
             f"Upgrade Health ({self.player.upgrade_cost_health})", 
             WIDTH//2 - 150, 300, 300, 50,
-            LIGHT_GRAY if self.score >= self.player.upgrade_cost_health else GRAY,
-            WHITE if self.score >= self.player.upgrade_cost_health else GRAY
+            LIGHT_GRAY if total_available >= self.player.upgrade_cost_health else GRAY,
+            WHITE if total_available >= self.player.upgrade_cost_health else GRAY
         )
         
         button_states['upgrade_firerate'] = self.draw_button(
             f"Upgrade Fire Rate ({self.player.upgrade_cost_firerate})", 
             WIDTH//2 - 150, 370, 300, 50,
-            LIGHT_GRAY if self.score >= self.player.upgrade_cost_firerate else GRAY,
-            WHITE if self.score >= self.player.upgrade_cost_firerate else GRAY
+            LIGHT_GRAY if total_available >= self.player.upgrade_cost_firerate else GRAY,
+            WHITE if total_available >= self.player.upgrade_cost_firerate else GRAY
         )
         
         button_states['back'] = self.draw_button(
@@ -1213,7 +1229,7 @@ class Game:
         )
         
         return button_states
-                
+
     def draw_button(self, text, x, y, width, height, inactive_color, active_color):
         mouse_over = x < self.mouse_pos[0] < x + width and y < self.mouse_pos[1] < y + height
         
@@ -1225,7 +1241,7 @@ class Game:
         screen.blit(text_surf, text_rect)
         
         return mouse_over and self.mouse_clicked
-        
+
     def draw_pause_menu(self):
         overlay = pygame.Surface((WIDTH, HEIGHT), pygame.SRCALPHA)
         overlay.fill((0, 0, 0, 180))
@@ -1248,7 +1264,7 @@ class Game:
                 self.state = button["action"]
         
         pygame.display.flip()
-        
+
     def draw_game(self):
         # Draw background
         if bg_img:
@@ -1285,7 +1301,7 @@ class Game:
             # Draw UI (only if not dead)
             if not self.player.dead:
                 health_text = self.font.render(f"Health: {self.player.health}/{self.player.max_health}", True, WHITE)
-                score_text = self.font.render(f"Score: {self.score}", True, WHITE)
+                score_text = self.font.render(f"Score: {self.current_score} (Best: {self.save_data['high_score']})", True, WHITE)
                 planes_text = self.font.render(f"Planes: {self.planes_destroyed}", True, WHITE)
                 missile_text = self.font.render(f"Missiles: {self.player.missiles}/{self.player.max_missiles}", True, (0, 255, 255))
                 screen.blit(health_text, (10, 10))
@@ -1311,7 +1327,11 @@ class Game:
                         global_particles.extend(enemy.death_particles)
                         self.player.bullets.remove(bullet)
                         self.enemies.remove(enemy)
-                        self.score += 1 * enemy.max_health
+                        self.current_score += 1 * enemy.max_health
+                        # Update high score if necessary
+                        # if self.current_score > self.save_data["high_score"]:
+                        #     self.save_data["high_score"] = self.current_score
+
                         self.planes_destroyed += 1
                         if has_sound:
                             explosion_sound.play()
@@ -1490,44 +1510,30 @@ class Game:
 
         self.check_collisions()
 
-    def draw_game(self):
-        # Draw background
-        if bg_img:
-            screen.blit(bg_img, (0, 0))
-        else:
-            screen.fill(BLACK)
+    def reset_for_new_player(self):
+        """Completely reset all progress for a new player"""
+        self.save_data = {
+            "player_name": "Player1",
+            "high_score": 0,
+            "total_planes_destroyed": 0,
+            "upgrades": {
+                "max_health": 100,
+                "shoot_delay": 15,
+                "health_upgrade_cost": 100,
+                "firerate_upgrade_cost": 150
+            },
+            "unspent_score": 0
+        }
+        self.save_game()
+        self.reset_game()  # Reset current session
         
-        # Draw game elements
-        for bullet in self.player.bullets:
-            bullet.draw()
-        for bullet in self.enemy_bullets:
-            bullet.draw()
-        
-        for enemy in self.enemies:
-            enemy.draw(screen)
-            enemy.draw_particles(screen)
-        
-        self.player.draw(screen)
-        self.player.draw_hit_particles(screen)
-        
-        for p in global_particles[:]:
-            pygame.draw.circle(screen, p['color'], (int(p['x']), int(p['y'])), p['size'])
-            p['x'] += p['dx']
-            p['y'] += p['dy']
-            p['life'] -= 1
-            if p['life'] <= 0:
-                global_particles.remove(p)
-        
-        # Draw UI
-        if not self.player.dead or self.player.death_animation:
-            health_text = self.font.render(f"Health: {self.player.health}/{self.player.max_health}", True, WHITE)
-            score_text = self.font.render(f"Score: {self.score}", True, WHITE)
-            planes_text = self.font.render(f"Planes: {self.planes_destroyed}", True, WHITE)
-            missile_text = self.font.render(f"Missiles: {self.player.missiles}/{self.player.max_missiles}", True, (0, 255, 255))
-            screen.blit(health_text, (10, 10))
-            screen.blit(score_text, (10, 50))
-            screen.blit(planes_text, (10, 90))
-            screen.blit(missile_text, (10, 130))
+        # Also reset player object completely
+        self.player = Player()
+        self.player.max_health = 100
+        self.player.health = 100
+        self.player.shoot_delay = 15
+        self.player.upgrade_cost_health = 100
+        self.player.upgrade_cost_firerate = 150
 
     def draw_game_over(self):
         # Semi-transparent overlay
@@ -1537,29 +1543,29 @@ class Game:
         
         # Game Over text
         game_over_text = self.title_font.render("GAME OVER", True, RED)
-        screen.blit(game_over_text, (WIDTH//2 - game_over_text.get_width()//2, HEIGHT//4))
+        screen.blit(game_over_text, (WIDTH//2 - game_over_text.get_width()//2, HEIGHT//6))
         
         # Stats
         stats = [
-            f"Final Score: {self.score}",
-            f"Planes Destroyed: {self.planes_destroyed}",
-            f"Max Health: {self.player.max_health}",
+            f"Session Score: {self.current_score}",
+            f"High Score: {self.save_data['high_score']}",
+            f"Session Planes: {self.planes_destroyed}",
+            f"Total Planes: {self.save_data['total_planes_destroyed']}",
+            f"Health Level: {self.player.max_health}",
             f"Fire Rate: {60/self.player.shoot_delay:.1f} shots/sec"
         ]
         
         for i, stat in enumerate(stats):
             text = self.font.render(stat, True, WHITE)
-            screen.blit(text, (WIDTH//2 - text.get_width()//2, HEIGHT//3 + 50 + i * 40))
+            screen.blit(text, (WIDTH//2 - text.get_width()//2, HEIGHT//3 - 40 + i * 40))
         
         # Buttons
-        # Initialize button states
         game_over_button_states = {
             'play_again': False,
             'menu': False,
             'quit': False
         }
         
-        # Update button states
         game_over_button_states['play_again'] = self.draw_button(
             "Play Again", WIDTH//2 - 100, HEIGHT//2 + 100, 200, 50, LIGHT_GRAY, WHITE
         )
@@ -1575,7 +1581,6 @@ class Game:
     def run(self):
         running = True
         while running:
-            # Handle all events
             self.handle_events()
             
             if self.state == GameState.QUIT:
@@ -1588,7 +1593,7 @@ class Game:
             else:
                 screen.fill(BLACK)
             
-            # Draw the appropriate screen and handle button clicks
+            # Draw the appropriate screen
             if self.state == GameState.MAIN_MENU:
                 self.draw_main_menu()
             elif self.state == GameState.PLAYING:
@@ -1596,35 +1601,64 @@ class Game:
                 self.draw_game()
             elif self.state == GameState.PAUSED:
                 self.draw_game()
+                overlay = pygame.Surface((WIDTH, HEIGHT), pygame.SRCALPHA)
+                overlay.fill((0, 0, 0, 180))
+                screen.blit(overlay, (0, 0))
                 self.draw_pause_menu()
             elif self.state == GameState.SHOP:
-                # First draw the shop and get button states
                 shop_button_states = self.draw_shop()
+                total_available = self.save_data["unspent_score"] + self.current_score
                 
-                # Then handle button actions
-                if shop_button_states.get('upgrade_health', False) and self.score >= self.player.upgrade_cost_health:
-                    self.score -= self.player.upgrade_cost_health
+                if shop_button_states.get('upgrade_health', False) and total_available >= self.player.upgrade_cost_health:
+                    if self.current_score >= self.player.upgrade_cost_health:
+                        self.current_score -= self.player.upgrade_cost_health
+                    else:
+                        remaining_cost = self.player.upgrade_cost_health - self.current_score
+                        self.current_score = 0
+                        self.save_data["unspent_score"] -= remaining_cost
+                    
                     self.player.max_health += 10
                     self.player.health = self.player.max_health
                     self.player.upgrade_cost_health = int(self.player.upgrade_cost_health * 1.5)
                     self.save_game()
                     
-                elif shop_button_states.get('upgrade_firerate', False) and self.score >= self.player.upgrade_cost_firerate:
-                    self.score -= self.player.upgrade_cost_firerate
+                elif shop_button_states.get('upgrade_firerate', False) and total_available >= self.player.upgrade_cost_firerate:
+                    if self.current_score >= self.player.upgrade_cost_firerate:
+                        self.current_score -= self.player.upgrade_cost_firerate
+                    else:
+                        remaining_cost = self.player.upgrade_cost_firerate - self.current_score
+                        self.current_score = 0
+                        self.save_data["unspent_score"] -= remaining_cost
+                    
                     self.player.shoot_delay = max(5, self.player.shoot_delay - 3)
                     self.player.upgrade_cost_firerate = int(self.player.upgrade_cost_firerate * 1.75)
                     self.save_game()
                     
                 elif shop_button_states.get('back', False):
+                    # When leaving shop, add current score to unspent
+                    self.save_data["unspent_score"] += self.current_score
+                    self.current_score = 0
                     self.state = GameState.MAIN_MENU
+                    self.save_game()
+                    pygame.time.delay(200)  # Prevent accidental double clicks
                     
             elif self.state == GameState.GAME_OVER:
+                # Only save once when entering game over state
+                if not self.already_saved:
+                    self.save_data["unspent_score"] += self.current_score
+                    self.save_data["total_planes_destroyed"] += self.planes_destroyed
+                    self.save_game()
+                    self.already_saved = True
+
                 game_over_button_states = self.draw_game_over()
                 
                 if game_over_button_states.get('play_again', False):
                     self.reset_game()
+                    self.already_saved = False
                     self.state = GameState.PLAYING
                 elif game_over_button_states.get('menu', False):
+                    self.reset_game()
+                    self.already_saved = False
                     self.state = GameState.MAIN_MENU
                 elif game_over_button_states.get('quit', False):
                     self.state = GameState.QUIT
