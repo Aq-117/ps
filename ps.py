@@ -1,7 +1,9 @@
-# Fixed flickering pause screen. 
+# Tried player2.
 # Bug: play, upgrade health, click new player, now if i directly start game, the health is previously health
 # i.e. if i upgrade health to 200, then click new player, the new player has 200 health.
 # this wont happen if i click new player, go to shop, come back and then start game.
+#Bug still persists from ps26.py
+
 import pygame
 import random
 import sys
@@ -35,6 +37,7 @@ BLUE = (0, 120, 255)
 RED = (255, 50, 50)
 GREEN = (0, 255, 0)
 YELLOW = (255, 255, 0)
+CYAN = (0, 200, 255)
 
 # Load images with error handling
 def load_image(name, scale=1):
@@ -439,10 +442,60 @@ class Player:
                 self.draw_health_bar(surface)
         
         elif not self.death_animation:
-            pygame.draw.polygon(surface, (0, 120, 255), 
+            pygame.draw.polygon(surface, BLUE, 
                             [(self.x+40, self.y+15), 
                             (self.x, self.y), 
                             (self.x, self.y+30)])
+            
+            if self.health < self.max_health:
+                health_width = 40 * (self.health / self.max_health)
+                pygame.draw.rect(surface, (255,0,0), (self.x, self.y-10, 40, 3))
+                pygame.draw.rect(surface, (0,255,0), (self.x, self.y-10, health_width, 3))
+        
+        if self.mouse_control:
+            mouse_pos = pygame.mouse.get_pos()
+            pygame.draw.circle(surface, (255, 255, 0), mouse_pos, 5, 1)
+            pygame.draw.line(surface, (255, 255, 0), 
+                            (mouse_pos[0]-10, mouse_pos[1]), 
+                            (mouse_pos[0]+10, mouse_pos[1]), 1)
+            pygame.draw.line(surface, (255, 255, 0), 
+                            (mouse_pos[0], mouse_pos[1]-10), 
+                            (mouse_pos[0], mouse_pos[1]+10), 1)
+    
+        if self.hit_flash > 0 and self.hit_flash % 3 < 2 and not self.death_animation:
+            flash_surf = pygame.Surface((self.rect.width, self.rect.height), pygame.SRCALPHA)
+            flash_surf.fill((255, 255, 255, 150))
+            surface.blit(flash_surf, (self.rect.x, self.rect.y))
+        
+        self.draw_hit_particles(surface)
+        
+        if self.death_animation:
+            self.draw_death_effect(surface)
+
+class Player2(Player):
+    def __init__(self):
+        super().__init__()
+        # Override some stats to make this plane better
+        self.max_health = 120  # More health
+        self.health = self.max_health
+        self.shoot_delay = 12  # Faster firing rate
+        self.speed = 6  # Faster movement
+        self.max_missiles = 4  # More missiles
+        self.missiles = self.max_missiles
+        self.missile_recharge_delay = 720  # Faster missile recharge (12 seconds at 60 FPS)
+        self.upgrade_cost_health = 120
+        self.upgrade_cost_firerate = 180
+        
+        # Different color for player 2
+        self.color = CYAN  # Cyan-blue color
+        
+    def draw(self, surface):
+        # Custom draw method with different color
+        if not self.death_animation:
+            pygame.draw.polygon(surface, self.color, 
+                            [(self.x+40, self.y+15), 
+                             (self.x, self.y), 
+                             (self.x, self.y+30)])
             
             if self.health < self.max_health:
                 health_width = 40 * (self.health / self.max_health)
@@ -1026,7 +1079,9 @@ class Enemy7(Enemy):
 class Game:
     def __init__(self):
         self.state = GameState.MAIN_MENU
-        self.player = Player()
+        self.players = [Player(), Player2()]  # List of available players
+        self.current_player_index = 0  # Start with first player
+        self.player = self.players[self.current_player_index]  # Current player
         self.enemies = []
         self.enemy_bullets = []
         self.player_bullets = []
@@ -1125,7 +1180,11 @@ class Game:
     def reset_game(self):
         """Reset current game session while preserving upgrades and progress"""
         # Reset player state but keep upgrades
-        self.player.reset()
+        self.players = [Player(), Player2()]
+        self.current_player_index = 0
+        self.player = self.players[self.current_player_index]
+        
+        # Apply upgrades to current player
         self.player.max_health = self.save_data["upgrades"]["max_health"]
         self.player.health = self.player.max_health
         self.player.shoot_delay = self.save_data["upgrades"]["shoot_delay"]
@@ -1156,6 +1215,19 @@ class Game:
         title_rect = title.get_rect(center=(WIDTH//2, HEIGHT//4 - 70))
         screen.blit(title, title_rect)
         
+        # Player selection buttons
+        if self.draw_button(f"Select Plane 1", WIDTH//2 - 220, HEIGHT//2 - 170, 200, 50, 
+                           BLUE if self.current_player_index == 0 else GRAY, 
+                           LIGHT_GRAY):
+            self.current_player_index = 0
+            self.player = self.players[0]
+            
+        if self.draw_button(f"Select Plane 2", WIDTH//2 + 20, HEIGHT//2 - 170, 200, 50, 
+                           CYAN if self.current_player_index == 1 else GRAY, 
+                           LIGHT_GRAY):
+            self.current_player_index = 1
+            self.player = self.players[1]
+        
         # Buttons with proper spacing
         buttons = [
             {"text": "Start Game", "action": GameState.PLAYING, "reset": True},
@@ -1164,7 +1236,7 @@ class Game:
         ]
         
         for i, button in enumerate(buttons):
-            y_pos = HEIGHT//2 - 170 + i * 70
+            y_pos = HEIGHT//2 - 100 + i * 70  # Adjusted y positions
             if self.draw_button(button["text"], WIDTH//2 - 100, y_pos, 200, 50, GRAY, LIGHT_GRAY):
                 if button.get("reset", False):
                     self.reset_game()
@@ -1199,6 +1271,11 @@ class Game:
         
         title = self.title_font.render("UPGRADE SHOP", True, YELLOW)
         screen.blit(title, (WIDTH//2 - title.get_width()//2, 50))
+        
+        # Add player indicator
+        player_text = self.font.render(f"Current Plane: {self.current_player_index + 1}", True, 
+                                     CYAN if self.current_player_index == 1 else BLUE)
+        screen.blit(player_text, (WIDTH//2 - player_text.get_width()//2, 120))
         
         # Player stats
         total_available_score = self.save_data["unspent_score"] + self.current_score
@@ -1342,10 +1419,6 @@ class Game:
                         self.player.bullets.remove(bullet)
                         self.enemies.remove(enemy)
                         self.current_score += 1 * enemy.max_health
-                        # Update high score if necessary
-                        # if self.current_score > self.save_data["high_score"]:
-                        #     self.save_data["high_score"] = self.current_score
-
                         self.planes_destroyed += 1
                         if has_sound:
                             explosion_sound.play()
@@ -1540,19 +1613,10 @@ class Game:
         }
         self.save_game()
         
-        # # Also reset player object completely
-        # self.player = Player()
-        # self.player.max_health = 100
-        # self.player.health = 100
-        # self.player.shoot_delay = 15
-        # self.player.upgrade_cost_health = 100
-        # self.player.upgrade_cost_firerate = 150
-
         self.player = Player()
         self.load_game(force_defaults=True)  # Load defaults
         self.reset_game()  # Reset current session
         self.state = GameState.MAIN_MENU  # Force refresh the menu display
-
 
     def draw_game_over(self):
         # Semi-transparent overlay
@@ -1649,6 +1713,9 @@ class Game:
                     self.player.max_health += 10
                     self.player.health = self.player.max_health
                     self.player.upgrade_cost_health = int(self.player.upgrade_cost_health * 1.5)
+                    # Update save data with current player's upgrades
+                    self.save_data["upgrades"]["max_health"] = self.player.max_health
+                    self.save_data["upgrades"]["health_upgrade_cost"] = self.player.upgrade_cost_health
                     self.save_game()
                     
                 elif shop_button_states.get('upgrade_firerate', False) and total_available >= self.player.upgrade_cost_firerate:
@@ -1661,6 +1728,9 @@ class Game:
                     
                     self.player.shoot_delay = max(5, self.player.shoot_delay - 3)
                     self.player.upgrade_cost_firerate = int(self.player.upgrade_cost_firerate * 1.75)
+                    # Update save data with current player's upgrades
+                    self.save_data["upgrades"]["shoot_delay"] = self.player.shoot_delay
+                    self.save_data["upgrades"]["firerate_upgrade_cost"] = self.player.upgrade_cost_firerate
                     self.save_game()
                     
                 elif shop_button_states.get('back', False):
@@ -1696,8 +1766,6 @@ class Game:
             self.clock.tick(60)
             
             # Clear paused game surface when unpausing
-            # if self.state != GameState.PAUSED and hasattr(self, 'paused_game_surface'):
-            #     del self.paused_game_surface
             if hasattr(self, 'paused_game_surface'):
                 del self.paused_game_surface
 
@@ -1705,3 +1773,4 @@ class Game:
 if __name__ == "__main__":
     game = Game()
     game.run()
+    
