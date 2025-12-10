@@ -1,4 +1,7 @@
-# Made proper shop management and player upgrades saving
+# Fixed flickering pause screen. 
+# Bug: play, upgrade health, click new player, now if i directly start game, the health is previously health
+# i.e. if i upgrade health to 200, then click new player, the new player has 200 health.
+# this wont happen if i click new player, go to shop, come back and then start game.
 import pygame
 import random
 import sys
@@ -1055,26 +1058,37 @@ class Game:
         }
         self.load_game()  
         
-    def load_game(self):
+    def load_game(self, force_defaults=False):
         try:
-            with open(self.save_file, "r") as f:
-                self.save_data = json.load(f)
-                
+            if not force_defaults:
+                with open(self.save_file, "r") as f:
+                    self.save_data = json.load(f)
+            
             # Initialize all values from save data
             self.player_name = self.save_data.get("player_name", "Player1")
             self.current_score = 0  # Start fresh each game
             self.planes_destroyed = 0  # Current session only
             
-            # Load upgrades
-            upgrades = self.save_data.get("upgrades", {})
-            self.player.max_health = upgrades.get("max_health", 100)
-            self.player.health = self.player.max_health
-            self.player.shoot_delay = upgrades.get("shoot_delay", 15)
-            self.player.upgrade_cost_health = upgrades.get("health_upgrade_cost", 100)
-            self.player.upgrade_cost_firerate = upgrades.get("firerate_upgrade_cost", 150)
+            # Get upgrades (use defaults if force_defaults is True)
+            upgrades = self.save_data.get("upgrades", {
+                "max_health": 100,
+                "shoot_delay": 15,
+                "health_upgrade_cost": 100,
+                "firerate_upgrade_cost": 150
+            })
             
-        except (FileNotFoundError, json.JSONDecodeError):
-            # Initialize new save data if file doesn't exist or is corrupt
+            # Apply upgrades to player
+            if hasattr(self, 'player'):
+                self.player.max_health = upgrades.get("max_health", 100)
+                self.player.health = self.player.max_health
+                self.player.shoot_delay = upgrades.get("shoot_delay", 15)
+                self.player.upgrade_cost_health = upgrades.get("health_upgrade_cost", 100)
+                self.player.upgrade_cost_firerate = upgrades.get("firerate_upgrade_cost", 150)
+                
+        except (FileNotFoundError, json.JSONDecodeError) as e:
+            if not force_defaults:
+                print(f"Error loading save: {e}, creating new save")
+            # Initialize new save data
             self.save_data = {
                 "player_name": "Player1",
                 "high_score": 0,
@@ -1088,7 +1102,7 @@ class Game:
                 "unspent_score": 0
             }
             self.save_game()
-            
+
     def save_game(self):
         # Update high score to be max of previous high score and current session score
         # (Don't include unspent score in high score comparison)
@@ -1525,15 +1539,20 @@ class Game:
             "unspent_score": 0
         }
         self.save_game()
-        self.reset_game()  # Reset current session
         
-        # Also reset player object completely
+        # # Also reset player object completely
+        # self.player = Player()
+        # self.player.max_health = 100
+        # self.player.health = 100
+        # self.player.shoot_delay = 15
+        # self.player.upgrade_cost_health = 100
+        # self.player.upgrade_cost_firerate = 150
+
         self.player = Player()
-        self.player.max_health = 100
-        self.player.health = 100
-        self.player.shoot_delay = 15
-        self.player.upgrade_cost_health = 100
-        self.player.upgrade_cost_firerate = 150
+        self.load_game(force_defaults=True)  # Load defaults
+        self.reset_game()  # Reset current session
+        self.state = GameState.MAIN_MENU  # Force refresh the menu display
+
 
     def draw_game_over(self):
         # Semi-transparent overlay
@@ -1600,9 +1619,19 @@ class Game:
                 self.update_game()
                 self.draw_game()
             elif self.state == GameState.PAUSED:
-                self.draw_game()
+                # Only draw game once when paused (no flickering)
+                if not hasattr(self, 'paused_game_surface'):
+                    # Create a surface to store the paused game state
+                    self.paused_game_surface = pygame.Surface((WIDTH, HEIGHT))
+                    self.draw_game()  # Draw current game state
+                    # Copy the current screen to our paused surface
+                    self.paused_game_surface.blit(screen, (0, 0))
+                
+                # Draw the paused game state
+                screen.blit(self.paused_game_surface, (0, 0))
+                # Draw pause overlay - reduced alpha for less darkness
                 overlay = pygame.Surface((WIDTH, HEIGHT), pygame.SRCALPHA)
-                overlay.fill((0, 0, 0, 180))
+                overlay.fill((50, 50, 50, 120))  # Changed from (0,0,0,180) to lighter gray
                 screen.blit(overlay, (0, 0))
                 self.draw_pause_menu()
             elif self.state == GameState.SHOP:
@@ -1665,6 +1694,12 @@ class Game:
             
             pygame.display.flip()
             self.clock.tick(60)
+            
+            # Clear paused game surface when unpausing
+            # if self.state != GameState.PAUSED and hasattr(self, 'paused_game_surface'):
+            #     del self.paused_game_surface
+            if hasattr(self, 'paused_game_surface'):
+                del self.paused_game_surface
 
 # Start the game
 if __name__ == "__main__":
