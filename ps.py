@@ -1,4 +1,4 @@
-# Tried player2.
+# tried levels, buggy code
 # Bug: play, upgrade health, click new player, now if i directly start game, the health is previously health
 # i.e. if i upgrade health to 200, then click new player, the new player has 200 health.
 # this wont happen if i click new player, go to shop, come back and then start game.
@@ -27,6 +27,8 @@ class GameState(Enum):
     SHOP = 3
     GAME_OVER = 4
     QUIT = 5
+    LEVEL_SELECT = 6  # New state for level selection
+    LEVEL_PLAYING = 7  # New state for playing levels
 
 # Colors (fallback if images fail)
 BLACK = (0, 0, 0)
@@ -1111,7 +1113,31 @@ class Game:
             },
             "unspent_score": 0
         }
+
+        # Level system additions
+        self.level_data = {
+            1: {"unlocked": True, "completed": False, "enemies": [1, 1, 1]},  # Basic enemies
+            2: {"unlocked": False, "completed": False, "enemies": [1, 2, 1, 2]},
+            3: {"unlocked": False, "completed": False, "enemies": [2, 3, 2, 3]},
+            4: {"unlocked": False, "completed": False, "enemies": [4, 1, 1, 4]},  # With homing enemies
+            5: {"unlocked": False, "completed": False, "enemies": [5, 5, 5]},  # Zigzag enemies
+            6: {"unlocked": False, "completed": False, "enemies": [6, 6, 6, 1, 1]},  # Right-to-left enemies
+            7: {"unlocked": False, "completed": False, "enemies": [7, 7, 2, 2]},  # Bomber enemies
+            8: {"unlocked": False, "completed": False, "enemies": [4, 4, 5, 5]},  # Mixed
+            9: {"unlocked": False, "completed": False, "enemies": [3, 4, 5, 6, 7]},  # All types
+            10: {"unlocked": False, "completed": False, "enemies": [4, 4, 4, 5, 5, 5, 7, 7]}  # Challenge
+        }
+        self.current_level = 1
+        self.level_enemies = []  # Enemies for current level
+        self.level_complete = False
+        self.level_spawn_index = 0
+        self.level_spawn_timer = 0
+        self.level_spawn_delay = 60  # Frames between enemy spawns in level
+        
         self.load_game()  
+
+        # Load level progress from save
+        self.load_level_progress()
         
     def load_game(self, force_defaults=False):
         try:
@@ -1119,6 +1145,9 @@ class Game:
                 with open(self.save_file, "r") as f:
                     self.save_data = json.load(f)
             
+            #Initialize level progress
+            self.load_level_progress()
+
             # Initialize all values from save data
             self.player_name = self.save_data.get("player_name", "Player1")
             self.current_score = 0  # Start fresh each game
@@ -1159,6 +1188,13 @@ class Game:
             self.save_game()
 
     def save_game(self):
+
+        # Update level progress in save data
+        for level, data in self.level_data.items():
+            if level in self.save_data["levels"]:
+                self.save_data["levels"][level]["unlocked"] = data["unlocked"]
+                self.save_data["levels"][level]["completed"] = data["completed"]
+
         # Update high score to be max of previous high score and current session score
         # (Don't include unspent score in high score comparison)
         self.save_data["high_score"] = max(self.current_score, self.save_data.get("high_score", 0))
@@ -1231,6 +1267,7 @@ class Game:
         # Buttons with proper spacing
         buttons = [
             {"text": "Start Game", "action": GameState.PLAYING, "reset": True},
+            {"text": "Levels", "action": GameState.LEVEL_SELECT},  # New button
             {"text": "Shop", "action": GameState.SHOP},
             {"text": "Quit", "action": GameState.QUIT}
         ]
@@ -1489,46 +1526,68 @@ class Game:
             self.state = GameState.QUIT
 
     def update_game(self):
-        if self.state != GameState.PLAYING:
-            return
+        if self.state == GameState.PLAYING:
+            # Existing endless mode logic
+            keys = pygame.key.get_pressed()
+            mouse_pos = pygame.mouse.get_pos()
             
-        keys = pygame.key.get_pressed()
-        mouse_pos = pygame.mouse.get_pos()
-        
-        # Update player
-        death_complete = self.player.update(keys, mouse_pos)
-        
-        # Check if player died and transition to GAME_OVER state after animation
-        if self.player.dead and self.player.death_complete:
-            self.state = GameState.GAME_OVER
-            self.save_game()
-            return
-        
-        # Don't update game logic if player is in death animation
-        if self.player.dead:
-            return
-        
-        # Spawn enemies
-        self.enemy_spawn_timer += 1
-        if self.enemy_spawn_timer > 120:
-            enemy_type = random.choices([1, 2, 3, 4, 5, 6, 7], weights=[20, 30, 20, 10, 10, 7, 7], k=1)[0]
-            if enemy_type == 1:
-                self.enemies.append(Enemy1())
-            elif enemy_type == 2:
-                self.enemies.append(Enemy2())
-            elif enemy_type == 3:
-                self.enemies.append(Enemy3())
-            elif enemy_type == 4:
-                self.enemies.append(Enemy4())
-            elif enemy_type == 5:
-                self.enemies.append(Enemy5())
-            elif enemy_type == 6:
-                self.enemies.append(Enemy6())
-            else:
-                self.enemies.append(Enemy7())
-            self.enemy_spawn_timer = 0
+            # Update player
+            death_complete = self.player.update(keys, mouse_pos)
+            
+            if self.player.dead and self.player.death_complete:
+                self.state = GameState.GAME_OVER
+                self.save_game()
+                return
+            
+            if self.player.dead:
+                return
+                
+            # Spawn enemies in endless mode
+            self.enemy_spawn_timer += 1
+            if self.enemy_spawn_timer > 120:
+                enemy_type = random.choices([1, 2, 3, 4, 5, 6, 7], weights=[20, 30, 20, 10, 10, 7, 7], k=1)[0]
+                if enemy_type == 1:
+                    self.enemies.append(Enemy1())
+                elif enemy_type == 2:
+                    self.enemies.append(Enemy2())
+                elif enemy_type == 3:
+                    self.enemies.append(Enemy3())
+                elif enemy_type == 4:
+                    self.enemies.append(Enemy4())
+                elif enemy_type == 5:
+                    self.enemies.append(Enemy5())
+                elif enemy_type == 6:
+                    self.enemies.append(Enemy6())
+                elif enemy_type == 7:
+                    self.enemies.append(Enemy7())
+                self.enemy_spawn_timer = 0
 
-        # Update player bullets
+        elif self.state == GameState.LEVEL_PLAYING:
+            # Level mode logic
+            keys = pygame.key.get_pressed()
+            mouse_pos = pygame.mouse.get_pos()
+            
+            # Update player
+            death_complete = self.player.update(keys, mouse_pos)
+            
+            if self.player.dead and self.player.death_complete:
+                self.state = GameState.GAME_OVER
+                self.save_game()
+                return
+            
+            if self.player.dead:
+                return
+                
+            # Spawn level enemies
+            still_spawning = self.spawn_level_enemies()
+            
+            # Check if level is complete
+            if not still_spawning and len(self.enemies) == 0 and not self.level_complete:
+                self.level_complete = True
+                self.complete_level()
+                return
+        
+        # Update bullets, enemies, collisions (same for both modes)
         for bullet in self.player.bullets[:]:
             if isinstance(bullet, PlayerHomingMissile):
                 if not bullet.update(self.enemies):
@@ -1661,6 +1720,106 @@ class Game:
         
         return game_over_button_states
 
+    def load_level_progress(self):
+        # Add level progress to save data if not present
+        if "levels" not in self.save_data:
+            self.save_data["levels"] = {
+                1: {"unlocked": True, "completed": False}
+            }
+            # Other levels remain locked by default
+            for level in range(2, 11):
+                self.save_data["levels"][level] = {"unlocked": False, "completed": False}
+        
+        # Update our level_data with save data
+        for level, data in self.save_data["levels"].items():
+            if level in self.level_data:
+                self.level_data[level]["unlocked"] = data["unlocked"]
+                self.level_data[level]["completed"] = data["completed"]
+
+# Add new method for level spawning:
+    def spawn_level_enemies(self):
+        if self.level_spawn_index >= len(self.level_enemies):
+            return False
+            
+        if self.level_spawn_timer <= 0:
+            enemy_type = self.level_enemies[self.level_spawn_index]
+            
+            if enemy_type == 1:
+                self.enemies.append(Enemy1())
+            elif enemy_type == 2:
+                self.enemies.append(Enemy2())
+            elif enemy_type == 3:
+                self.enemies.append(Enemy3())
+            elif enemy_type == 4:
+                self.enemies.append(Enemy4())
+            elif enemy_type == 5:
+                self.enemies.append(Enemy5())
+            elif enemy_type == 6:
+                self.enemies.append(Enemy6())
+            elif enemy_type == 7:
+                self.enemies.append(Enemy7())
+                
+            self.level_spawn_index += 1
+            self.level_spawn_timer = self.level_spawn_delay
+        else:
+            self.level_spawn_timer -= 1
+            
+        return self.level_spawn_index < len(self.level_enemies) or len(self.enemies) > 0
+
+# Add new method for level selection screen:
+    def draw_level_select(self):
+        if bg_img:
+            screen.blit(bg_img, (0, 0))
+        else:
+            screen.fill(BLACK)
+        
+        title = self.title_font.render("LEVEL SELECT", True, WHITE)
+        screen.blit(title, (WIDTH//2 - title.get_width()//2, 50))
+        
+        # Back button
+        if self.draw_button("Back", 20, 20, 100, 50, GRAY, LIGHT_GRAY):
+            self.state = GameState.MAIN_MENU
+        
+        # Draw level buttons (3 columns)
+        for level in range(1, 11):
+            col = (level - 1) % 3
+            row = (level - 1) // 3
+            
+            x = WIDTH//4 + col * (WIDTH//3)
+            y = 150 + row * 100
+            
+            unlocked = self.level_data[level]["unlocked"]
+            completed = self.level_data[level]["completed"]
+            
+            color = GREEN if completed else (BLUE if unlocked else RED)
+            hover_color = LIGHT_GRAY if unlocked else RED
+            
+            if self.draw_button(f"Level {level}", x - 75, y - 25, 150, 50, color, hover_color):
+                if unlocked:
+                    self.start_level(level)
+
+# Add new method to start a level:
+    def start_level(self, level):
+        self.current_level = level
+        self.level_enemies = self.level_data[level]["enemies"].copy()
+        self.level_spawn_index = 0
+        self.level_spawn_timer = 0
+        self.level_complete = False
+        self.reset_game()  # Reset player and game state
+        self.state = GameState.LEVEL_PLAYING
+
+# Add new method to complete a level:
+    def complete_level(self):
+        self.level_data[self.current_level]["completed"] = True
+        
+        # Unlock next level if exists
+        next_level = self.current_level + 1
+        if next_level <= 10:
+            self.level_data[next_level]["unlocked"] = True
+        
+        self.save_game()
+        self.state = GameState.LEVEL_SELECT  # Return to level select
+
     def run(self):
         running = True
         while running:
@@ -1682,6 +1841,19 @@ class Game:
             elif self.state == GameState.PLAYING:
                 self.update_game()
                 self.draw_game()
+            elif self.state == GameState.LEVEL_SELECT:  # New state
+                self.draw_level_select()
+            elif self.state == GameState.LEVEL_PLAYING:  # New state
+                self.update_game()
+                self.draw_game()
+                
+                # Draw level info
+                level_text = self.font.render(f"Level {self.current_level}", True, WHITE)
+                screen.blit(level_text, (WIDTH - 150, 10))
+                
+                remaining = len(self.level_enemies) - self.level_spawn_index
+                remaining_text = self.font.render(f"Enemies: {remaining + len(self.enemies)}", True, WHITE)
+                screen.blit(remaining_text, (WIDTH - 150, 50))
             elif self.state == GameState.PAUSED:
                 # Only draw game once when paused (no flickering)
                 if not hasattr(self, 'paused_game_surface'):
