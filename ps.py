@@ -1,4 +1,4 @@
-# Half-complete level system
+# Proper level system, but very tiny ignorable bugs.
 import pygame
 import random
 import sys
@@ -1029,6 +1029,7 @@ class Level:
         self.number = number
         self.unlocked = unlocked
         self.completed = False
+        self.currently_playing = False  # New state
         self.enemy_waves = []
         self.current_wave = 0
         self.wave_timer = 0
@@ -1124,7 +1125,12 @@ class Level:
         if not self.all_enemies_spawned:
             return False
             
-        return len(enemies) == 0
+        # Check if any enemies are still alive
+        for enemy in enemies:
+            if not enemy.dead:
+                return False
+                
+        return True
 
 class Game:
     def __init__(self):
@@ -1259,31 +1265,41 @@ class Game:
             print(f"Failed to save game: {e}")
 
     def reset_game(self):
-        """Reset current game session while preserving upgrades and progress"""
-        # Reset player state but keep upgrades
-        self.player.reset()
+        """Completely reset the game state for a fresh start"""
+        # Create a new player instance to ensure clean state
+        self.player = Player()
+        
+        # Apply upgrades from save data
         self.player.max_health = self.save_data["upgrades"]["max_health"]
         self.player.health = self.player.max_health
         self.player.shoot_delay = self.save_data["upgrades"]["shoot_delay"]
-        
-        # Reset game state but preserve costs
         self.player.upgrade_cost_health = self.save_data["upgrades"]["health_upgrade_cost"]
         self.player.upgrade_cost_firerate = self.save_data["upgrades"]["firerate_upgrade_cost"]
         
-        # Clear current session entities
+        # Clear all game objects
         self.enemies = []
         self.enemy_bullets = []
-        self.player_bullets = []
+        self.player.bullets = []
+        global_particles.clear()
+        
+        # Reset timers and counters
         self.enemy_spawn_timer = 0
-        
-        # Reset only current session score, keep high score
-        self.current_score = 0  # Track current session separately
-        self.planes_destroyed = 0  # Current session only
-        self.already_saved = False  # Reset save flag
-        
-        # Reset level-specific stats
+        self.current_score = 0
+        self.planes_destroyed = 0
         self.level_score = 0
         self.level_planes_destroyed = 0
+        self.already_saved = False
+        
+        # Clear any failure flags
+        if hasattr(self, 'level_failed'):
+            del self.level_failed
+        
+        # Reset the current level if one exists
+        if self.current_level:
+            # Create a fresh level instance to ensure clean state
+            level_num = self.current_level.number
+            self.levels[level_num-1] = Level(level_num, True)
+            self.current_level = self.levels[level_num-1]
 
     def draw_main_menu(self):
         if bg_img:
@@ -1362,6 +1378,9 @@ class Game:
                 if not level.unlocked:
                     color = (50, 50, 50)  # Dark gray for locked
                     hover_color = (50, 50, 50)
+                elif level.currently_playing:
+                    color = (100, 100, 255)  # Blue for current level
+                    hover_color = (150, 150, 255)
                 elif level.completed:
                     color = (0, 150, 0)  # Green for completed
                     hover_color = (0, 200, 0)
@@ -1377,11 +1396,25 @@ class Game:
         pygame.display.flip()
 
     def start_level(self, level_num):
-        self.reset_game()
+        # Reset all current flags first
+        for level in self.levels:
+            level.currently_playing = False
+        
+        # Set the new current level
         self.current_level = self.levels[level_num-1]
-        self.state = GameState.PLAYING
+        self.current_level.currently_playing = True
+        self.reset_game()  # This should handle all necessary resets
+        self.current_level = self.levels[level_num-1]
+        # Reset level-specific progress
+        self.current_level.current_wave = 0
+        self.current_level.wave_timer = 0
+        self.current_level.level_timer = 0
+        self.current_level.all_enemies_spawned = False
+        self.current_level.level_complete = False
         self.level_score = 0
         self.level_planes_destroyed = 0
+        self.state = GameState.PLAYING
+        # small flag
 
     def draw_level_complete(self):
         # Semi-transparent overlay
@@ -1390,7 +1423,11 @@ class Game:
         screen.blit(overlay, (0, 0))
         
         # Level Complete text
-        complete_text = self.title_font.render("LEVEL COMPLETE!", True, GREEN)
+        if hasattr(self, 'level_failed'):
+            complete_text = self.title_font.render("LEVEL FAILED!", True, RED)
+            del self.level_failed  # Clear the flag
+        else:
+            complete_text = self.title_font.render("LEVEL COMPLETE!", True, GREEN)
         screen.blit(complete_text, (WIDTH//2 - complete_text.get_width()//2, HEIGHT//6))
         
         # Stats
@@ -1442,7 +1479,28 @@ class Game:
         if button_states['next'] and next_level_unlocked:
             self.start_level(next_level_num)
         elif button_states['replay']:
-            self.start_level(self.current_level.number)
+            self.start_level(self.current_level.number)  # This will do a full reset
+            # # Reset level-specific stats but keep session progress
+            # self.level_score = 0
+            # self.level_planes_destroyed = 0
+            # self.player.health = self.player.max_health  # Full heal
+            # self.player.dead = False
+            # self.player.death_complete = False
+            
+            # # Clear all enemies and bullets
+            # self.enemies = []
+            # self.enemy_bullets = []
+            # self.player_bullets = []
+            
+            # # Restart the same level
+            # self.current_level.current_wave = 0
+            # self.current_level.wave_timer = 0
+            # self.current_level.level_timer = 0
+            # self.current_level.all_enemies_spawned = False
+            
+            # self.state = GameState.PLAYING
+            pygame.time.delay(200)  # Small delay to prevent instant clicks
+
         elif button_states['menu']:
             self.state = GameState.MAIN_MENU
         elif button_states['shop']:
@@ -1703,6 +1761,7 @@ class Game:
         if self.player.dead and self.player.death_complete:
             if self.current_level:
                 # In level mode, don't go to game over, just show level complete with failure
+                self.level_failed = True  # Add this flag to track failed levels
                 self.state = GameState.LEVEL_COMPLETE
             else:
                 self.state = GameState.GAME_OVER
@@ -1721,6 +1780,8 @@ class Game:
             if self.current_level.is_complete(self.enemies):
                 # Mark level as completed
                 self.current_level.completed = True
+                self.current_level.currently_playing = False  # Clear current flag
+
                 
                 # Unlock next level if it exists
                 next_level_num = self.current_level.number + 1
@@ -1734,6 +1795,13 @@ class Game:
                 self.state = GameState.LEVEL_COMPLETE
                 self.save_game()
                 return
+            # When level is failed:
+            if self.player.dead and self.player.death_complete:
+                if self.current_level:
+                    self.current_level.currently_playing = False  # Clear current flag
+                    self.level_failed = True
+                    self.state = GameState.LEVEL_COMPLETE
+
         else:
             # Endless mode enemy spawning
             self.enemy_spawn_timer += 1

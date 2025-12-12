@@ -3,9 +3,16 @@
     "high_score": 0,
     "total_planes_destroyed": 0,
     "upgrades": {
-        "max_health": 100,
-        "shoot_delay": 15,
-        "health_upgrade_cost": 100,
-        "firerate_upgrade_cost": 150
-    }
+        "max_health": 110,
+        "shoot_delay": 12,
+        "health_upgrade_cost": 150,
+        "firerate_upgrade_cost": 262
+    },
+    "unspent_score": 0,
+    "levels_unlocked": 15,
+    "levels_completed": [
+        "1",
+        "2",
+        "3"
+    ]
 }
